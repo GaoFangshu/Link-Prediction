@@ -97,7 +97,7 @@ for i in range(len(training_set)):
     overlap_title.append(len(set(source_title).intersection(set(target_title))))
     temp_diff.append(int(source_info[1]) - int(target_info[1]))
     comm_auth.append(len(set(source_auth).intersection(set(target_auth))))
-   
+
     
     if counter % 10000 == 0:
         print(counter, "training examples processsed")

@@ -1,7 +1,15 @@
+"""
+@author: Fangshu Gao <gaofangshu@foxmail.com>
+@brief: prepare data and features
+"""
+
 import csv
 import random
 import numpy as np
 import nltk
+import sys
+import time
+from utils import ngram_utils, dist_utils, np_utils
 
 DIR_TRIAN = "social_train.txt"
 DIR_TEST = "social_test.txt"
@@ -14,6 +22,7 @@ STPWDS = set(nltk.corpus.stopwords.words("english"))
 
 class Data():
     def __init__(self, sample):
+        assert type(sample) == bool
         self.stemmer = nltk.stem.PorterStemmer()
         # the columns of the node data frame below are:
         # (0) paper unique ID (integer)
@@ -30,13 +39,9 @@ class Data():
         self.data_tkzd_title = []
         self.data_tkzd_title_rm_stpwds = []
         self.data_tkzd_title_rm_stpwds_stem = []
-        self.tkzd_title = []
-        self.tkzd_title = []
-        self.tkzd_title = []
-
-
-        self.token_abstract = []
-
+        self.data_tkzd_abstract = []
+        self.data_tkzd_abstract_rm_stpwds = []
+        self.data_tkzd_abstract_rm_stpwds_stem = []
 
         if sample:
             # to test code we select sample
@@ -51,17 +56,120 @@ class Data():
         self.testing_set = self.split_to_list(data_test)
         #self.node_info_set = [element for element in data_node_info if element[0] in valid_ids]
         self.node_info_set = data_node_info
-        self.node_position = self.add_position(self.node_info_set)
+        self.node_position = self.add_position(self.node_info_set)    # {paperID : rowID in self.node_info_set}
 
-        self.add_tokenized_data()
+        self.prepare_data()
+
+    def get_features(self):
+        # features
+        fea_jaccard_tkzd_title = []
+        fea_dice_tkzd_title = []
+        fea_jaccard_bigr_tkzd_title = []
+        fea_dice_bigr_tkzd_title = []
+
+        fea_jaccard_tkzd_title_rm_stpwds = []
+        fea_dice_tkzd_title_rm_stpwds = []
+        fea_jaccard_bigr_tkzd_title_rm_stpwds = []
+        fea_dice_bigr_tkzd_title_rm_stpwds = []
+
+        for i in range(len(self.training_set)):
+            source = self.training_set[i][0]  # id of source paper
+            target = self.training_set[i][1]  # id of target paper
+            pos_source = self.node_position[source]
+            pos_target = self.node_position[target]
+
+            # features from self.data_tkzd_title
+            obs_tkzd_title_source = self.data_tkzd_title[pos_source]
+            obs_tkzd_title_target = self.data_tkzd_title[pos_target]
+            bigrams_tkzd_title_source = ngram_utils._ngrams(obs_tkzd_title_source, 2)
+            bigrams_tkzd_title_target = ngram_utils._ngrams(obs_tkzd_title_target, 2)
+
+            jaccard_tkzd_title = dist_utils._jaccard_coef(obs_tkzd_title_source, obs_tkzd_title_target)
+            dice_tkzd_title = dist_utils._dice_dist(obs_tkzd_title_source, obs_tkzd_title_target)
+            jaccard_bigr_tkzd_title = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            dice_bigr_tkzd_title = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+
+            fea_jaccard_tkzd_title.append(jaccard_tkzd_title)
+            fea_dice_tkzd_title.append(dice_tkzd_title)
+            fea_jaccard_bigr_tkzd_title.append(jaccard_bigr_tkzd_title)
+            fea_dice_bigr_tkzd_title.append(dice_bigr_tkzd_title)
+
+
+            # features from self.data_tkzd_title_rm_stpwds
+            obs_tkzd_title_rm_stpwds_source = self.data_tkzd_title_rm_stpwds[pos_source]
+            obs_tkzd_title_rm_stpwds_target = self.data_tkzd_title_rm_stpwds[pos_target]
+            bigrams_tkzd_title_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_source, 2)
+            bigrams_tkzd_title_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_target, 2)
+
+            jaccard_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(obs_tkzd_title_rm_stpwds_source, obs_tkzd_title_rm_stpwds_target)
+            dice_tkzd_title_rm_stpwds = dist_utils._dice_dist(obs_tkzd_title_rm_stpwds_source, obs_tkzd_title_rm_stpwds_target)
+            jaccard_bigr_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(bigrams_tkzd_title_rm_stpwds_source, bigrams_tkzd_title_rm_stpwds_target)
+            dice_bigr_tkzd_title_rm_stpwds = dist_utils._dice_dist(bigrams_tkzd_title_rm_stpwds_source, bigrams_tkzd_title_rm_stpwds_target)
+
+            fea_jaccard_tkzd_title_rm_stpwds.append(jaccard_tkzd_title_rm_stpwds)
+            fea_dice_tkzd_title_rm_stpwds.append(dice_tkzd_title_rm_stpwds)
+            fea_jaccard_bigr_tkzd_title_rm_stpwds.append(jaccard_bigr_tkzd_title_rm_stpwds)
+            fea_dice_bigr_tkzd_title_rm_stpwds.append(dice_bigr_tkzd_title_rm_stpwds)
+
+
+            #TODO: # features from self.data_tkzd_title_rm_stpwds
+
+            # features from self.data_tkzd_abstract
+            obs_tkzd_abstract_source = self.data_tkzd_abstract[pos_source]
+            obs_tkzd_abstract_target = self.data_tkzd_abstract[pos_target]
+            bigrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_title_source, 2)
+            bigrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_title_target, 2)
+            trigrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_title_source, 3)
+            trigrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_title_target, 3)
+            fourgrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_title_source, 4)
+            fourgrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_title_target, 4)
+
+            biterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_title_source, 2)
+            biterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_title_target, 2)
+            triterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_title_source, 3)
+            triterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_title_target, 3)
+            fourterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_title_source, 4)
+            fourterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_title_target, 4)
+
+            jaccard_tkzd_abstract = dist_utils._jaccard_coef(obs_tkzd_abstract_source, obs_tkzd_abstract_target)
+            jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_abstract_source, bigrams_tkzd_abstract_target)
+            jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+
+            dice_tkzd_abstract = dist_utils._dice_dist(obs_tkzd_abstract_source, obs_tkzd_abstract_target)
+            dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_abstract_source, bigrams_tkzd_abstract_target)
+            dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+            dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+
+
+
+
+
+            fea_jaccard_tkzd_title.append(jaccard_tkzd_title)
+            fea_dice_tkzd_title.append(dice_tkzd_title)
+            fea_jaccard_bigr_tkzd_title.append(jaccard_bigr_tkzd_title)
+            fea_dice_bigr_tkzd_title.append(dice_bigr_tkzd_title)
+
+
+            # features from self.data_tkzd_abstract_rm_stpwds
+
+            #TODO: # features from self.data_tkzd_abstract_rm_stpwds_stem
 
 
     def load_data(self, dir):
+        assert type(dir) == str
         with open(dir, "r") as f:
             data = list(csv.reader(f))
         return data
 
     def get_valid_ids(self, data):
+        assert type(dir) == list
         valid_ids = set()
         for element in data:
             valid_ids.add(element[0])
@@ -69,9 +177,11 @@ class Data():
         return valid_ids
 
     def split_to_list(self, data, by=" "):
+        assert type(data) == list
         return [element[0].split(by) for element in data]
 
     def add_position(self, data):
+        assert type(data) == list
         ids = []
         position = {}
         for element in data:
@@ -82,9 +192,10 @@ class Data():
     def add_feature(self, feature):
         pass
 
-    def add_tokenized_data(self):
-        # add lowercase and tokenized title and abstract
-        for i in range(len(self.node_info_set)):
+    def prepare_data(self):
+        counter = 0
+        size = len(self.node_info_set)
+        for i in range(size):
 
             # title
             # convert to lowercase and tokenize
@@ -98,96 +209,39 @@ class Data():
             self.data_tkzd_title_rm_stpwds_stem.append(tkzd_title_rm_stpwds_stem)
 
             # authors
-            authors = self.node_info_set[3].split(",")
+            authors = self.node_info_set[i][3].split(",")
             self.data_authors = authors
 
             # journal name
+            # TODO: self.node_info_set[i][4]
 
-
-            # (6) abstract (string) - lowercased, free of punctuation except intra-word dashes
             # abstract
-
-
-            print('')
-            #target_title = target_info[2].lower().split(" ")
-            #target_title = [token for token in target_title if token not in STPWDS]
-            #self.token_target_title = [self.stemmer.stem(token) for token in target_title]
-
-
-
-            #source_auth = source_info[3].split(",")
-            #target_auth = target_info[3].split(",")
-
-            #overlap_title.append(len(set(source_title).intersection(set(target_title))))
-            #temp_diff.append(int(source_info[1]) - int(target_info[1]))
-            #comm_auth.append(len(set(source_auth).intersection(set(target_auth))))
-
-    def remove_stpwds(self):
-        pass
-
-    def feature_overlap_title(self, observation):
-        # number of overlapping words in title
-        # `observation` is an observation of training data, e.g. self.training_set[i]
-        overlap_title = []
-        source = observation[0]    # id of source paper
-        target = observation[1]    # id of target paper
-
-        source_info = self.node_info_set[self.node_position[source]]
-        target_info = self.node_info_set[self.node_position[target]]
-
-        # convert to lowercase and tokenize
-        source_title = source_info[2].lower().split(" ")
-        # remove stopwords
-        source_title = [token for token in source_title if token not in STPWDS]
-        source_title = [self.stemmer.stem(token) for token in source_title]
-
-        target_title = target_info[2].lower().split(" ")
-        target_title = [token for token in target_title if token not in STPWDS]
-        target_title = [self.stemmer.stem(token) for token in target_title]
-
-        source_auth = source_info[3].split(",")
-        target_auth = target_info[3].split(",")
-
-        counter = 0
-        for i in range(len(self.training_set)):
-            source = self.training_set[i][0]
-            target = self.training_set[i][1]
-
-            source_info = self.node_info_set[self.node_position[source]]
-            target_info = self.node_info_set[self.node_position[target]]
-
             # convert to lowercase and tokenize
-            source_title = source_info[2].lower().split(" ")
+            tkzd_abstract = self.node_info_set[i][5].lower().split(" ")
+            self.data_tkzd_abstract.append(tkzd_abstract)
             # remove stopwords
-            source_title = [token for token in source_title if token not in STPWDS]
-            source_title = [self.stemmer.stem(token) for token in source_title]
+            tkzd_abstract_rm_stpwds = [token for token in tkzd_abstract if token not in STPWDS]
+            self.data_tkzd_abstract_rm_stpwds.append(tkzd_abstract_rm_stpwds)
+            # convert to root or original word
+            tkzd_abstract_rm_stpwds_stem = [self.stemmer.stem(token) for token in tkzd_abstract_rm_stpwds]
+            self.data_tkzd_abstract_rm_stpwds_stem.append(tkzd_abstract_rm_stpwds_stem)
 
-            target_title = target_info[2].lower().split(" ")
-            target_title = [token for token in target_title if token not in STPWDS]
-            target_title = [self.stemmer.stem(token) for token in target_title]
 
-            source_auth = source_info[3].split(",")
-            target_auth = target_info[3].split(",")
-
-            overlap_title.append(len(set(source_title).intersection(set(target_title))))
-            #temp_diff.append(int(source_info[1]) - int(target_info[1]))
-            #comm_auth.append(len(set(source_auth).intersection(set(target_auth))))
-
-            if counter % 10000 == 0:
-                print(counter, "training examples processsed")
             counter += 1
 
-    def feature_time_diff(self):
-        # temporal distance between the papers
-        time_diff = []
+            if counter % 1000 == 0:
+                sys.stdout.write("\rPreparing data: %.1f%%" % (100 * counter / size))
+                sys.stdout.flush()
 
-    def feature_comm_auth(self):
-        # number of common authors
-        comm_auth = []
+    def get_observation(self):
+        # get observation from self.node_info_set
+        # TODO: delete or not?
+        pass
+
 
 if __name__ == '__main__':
 
 
     data = Data(sample=True)
-
+    data.get_features()
     print('')

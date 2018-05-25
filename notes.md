@@ -17,8 +17,8 @@
 - [ ] word2vec
 - [ ] journal name (dummy)
 - [ ] journal name network, strength is the citation number
-- [ ] 
-- [ ] 
+- [ ] N-gram:_dice_dist
+- [ ] N-gram:_jaccard_coef
 - [ ] 
 - [ ] 
 
