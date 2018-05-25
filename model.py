@@ -280,7 +280,7 @@ class Data():
 
             counter += 1
 
-            if counter % 1000 == 0:
+            if counter % 10 == 0:
                 sys.stdout.write("\rPreparing features: %.1f%%" % (100 * counter / size))
                 sys.stdout.flush()
 

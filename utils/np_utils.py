@@ -11,7 +11,7 @@ from scipy.stats import pearsonr
 from collections import Counter
 
 sys.path.append("..")
-import config
+# import config
 
 
 def _sigmoid(score):
@@ -55,35 +55,35 @@ def _majority_voting(x, weight=None):
     return value
 
 
-def _voter(x, weight=None):
-    idx = np.isfinite(x)
-    if sum(idx) == 0:
-        value = config.MISSING_VALUE_NUMERIC
-    else:
-        if weight is not None:
-            value = _majority_voting(x[idx], weight[idx])
-        else:
-            value = _majority_voting(x[idx])
-    return value
+# def _voter(x, weight=None):
+#     idx = np.isfinite(x)
+#     if sum(idx) == 0:
+#         value = config.MISSING_VALUE_NUMERIC
+#     else:
+#         if weight is not None:
+#             value = _majority_voting(x[idx], weight[idx])
+#         else:
+#             value = _majority_voting(x[idx])
+#     return value
 
 
-def _array_majority_voting(X, weight=None):
-    y = np.apply_along_axis(_voter, axis=1, arr=X, weight=weight)
-    return y
+# def _array_majority_voting(X, weight=None):
+#     y = np.apply_along_axis(_voter, axis=1, arr=X, weight=weight)
+#     return y
+#
+#
+# def _mean(x):
+#     idx = np.isfinite(x)
+#     if sum(idx) == 0:
+#         value = float(config.MISSING_VALUE_NUMERIC) # cast it to float to accommodate the np.mean
+#     else:
+#         value = np.mean(x[idx]) # this is float!
+#     return value
 
-
-def _mean(x):
-    idx = np.isfinite(x)
-    if sum(idx) == 0:
-        value = float(config.MISSING_VALUE_NUMERIC) # cast it to float to accommodate the np.mean
-    else:
-        value = np.mean(x[idx]) # this is float!
-    return value
-
-
-def _array_mean(X):
-    y = np.apply_along_axis(_mean, axis=1, arr=X)
-    return y
+#
+# def _array_mean(X):
+#     y = np.apply_along_axis(_mean, axis=1, arr=X)
+#     return y
 
 
 def _corr(x, y_train):
