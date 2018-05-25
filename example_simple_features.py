@@ -15,7 +15,7 @@ nltk.download('stopwords')
 stpwds = set(nltk.corpus.stopwords.words("english"))
 stemmer = nltk.stem.PorterStemmer()
 
-with open("testing_set.txt", "r") as f:
+with open("social_test.txt", "r") as f:
     reader = csv.reader(f)
     testing_set  = list(reader)
 
@@ -30,7 +30,7 @@ testing_set = [element[0].split(" ") for element in testing_set]
 # (5) name of journal (optional) (string)
 # (6) abstract (string) - lowercased, free of punctuation except intra-word dashes
 
-with open("training_set.txt", "r") as f:
+with open("social_train.txt", "r") as f:
     reader = csv.reader(f)
     training_set  = list(reader)
 
@@ -39,7 +39,7 @@ with open("node_information.csv", "r") as f:
     reader = csv.reader(f)
     node_info  = list(reader)
 
-#to test code we select sample
+# to test code we select sample
 to_keep = random.sample(range(len(training_set)), k=int(round(len(training_set)*0.05)))
 training_set = [training_set[i] for i in to_keep]
 valid_ids=set()
@@ -81,7 +81,7 @@ for i in range(len(training_set)):
     source_info = node_info[ID_pos[source]]
     target_info = node_info[ID_pos[target]]
     
-	# convert to lowercase and tokenize
+    # convert to lowercase and tokenize
     source_title = source_info[2].lower().split(" ")
 	# remove stopwords
     source_title = [token for token in source_title if token not in stpwds]
@@ -100,8 +100,8 @@ for i in range(len(training_set)):
    
     
     if counter % 10000 == 0:
-        print counter, "training examples processsed"
-	counter += 1
+        print(counter, "training examples processsed")
+    counter += 1
 		
 # convert list of lists into array
 # documents as rows, unique words as columns (i.e., example as rows, features as columns)
@@ -115,7 +115,7 @@ labels = [int(element[2]) for element in training_set]
 labels = list(labels)
 labels_array = np.array(labels)
 
-print "evaluating"
+print("evaluating")
 
 
 #evaluation
@@ -131,8 +131,8 @@ for train_index, test_index in kf:
 	pred=classifier.predict(X_test)
 	sumf1+=f1_score(pred,y_test)
 	
-print "\n\n"
-print sumf1/10.0
+print("\n\n")
+print(sumf1/10.0)
 
 
 
