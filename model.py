@@ -11,6 +11,10 @@ import nltk
 import sys
 import time
 import re
+from sklearn import svm
+from sklearn import preprocessing
+from sklearn.cross_validation import KFold
+from sklearn.metrics import f1_score
 from utils import ngram_utils, dist_utils, np_utils
 
 DIR_TRIAN = "social_train.txt"
@@ -63,103 +67,108 @@ class Data():
         to_keep = random.sample(range(self.data_train.shape[0]), k=int(round(self.data_train.shape[0] * prop)))
         self.data_train = self.data_train.iloc[to_keep]
 
-    def get_batch(self, ids):
+    def get_batch(self, from_iloc, to_iloc, data_set):
         # ids from self.data_train
-        pass
+        if data_set == "train":
+            batch_data = self.data_train.iloc[from_iloc: to_iloc]
+        if data_set == "test":
+            batch_data = self.data_test.iloc[from_iloc: to_iloc]
+        result = batch_data[["id_source","id_target"]].apply(self.get_features, axis=1)
+        return result
 
-    def get_features(self, source_id, target_id):
-        output_list = []
+    def get_features(self, ids):
+        # ids = [source_id, target_id]
 
         # get base data
         # self.data_train.merge(self.data_node_info, left_on='id_source', right_on='rkey', how='outer')
 
         # features from self.data_tkzd_title
-        obs_tkzd_title_source = self.node_dict[source_id]["tkzd_title"]
-        obs_tkzd_title_target = self.node_dict[target_id]["tkzd_title"]
-        bigrams_tkzd_title_source = ngram_utils._ngrams(obs_tkzd_title_source, 2)
-        bigrams_tkzd_title_target = ngram_utils._ngrams(obs_tkzd_title_target, 2)
+        obs_tkzd_title_source = self.node_dict[ids[0]]["tkzd_title"]
+        obs_tkzd_title_target = self.node_dict[ids[1]]["tkzd_title"]
+        # bigrams_tkzd_title_source = ngram_utils._ngrams(obs_tkzd_title_source, 2)
+        # bigrams_tkzd_title_target = ngram_utils._ngrams(obs_tkzd_title_target, 2)
 
         jaccard_tkzd_title = dist_utils._jaccard_coef(obs_tkzd_title_source, obs_tkzd_title_target)
         dice_tkzd_title = dist_utils._dice_dist(obs_tkzd_title_source, obs_tkzd_title_target)
-        jaccard_bigr_tkzd_title = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
-        dice_bigr_tkzd_title = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+        # jaccard_bigr_tkzd_title = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
+        # dice_bigr_tkzd_title = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
 
         # features from self.data_tkzd_title_rm_stpwds
-        obs_tkzd_title_rm_stpwds_source = self.node_dict[source_id]["tkzd_title_rm_stpwds"]
-        obs_tkzd_title_rm_stpwds_target = self.node_dict[target_id]["tkzd_title_rm_stpwds"]
-        bigrams_tkzd_title_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_source, 2)
-        bigrams_tkzd_title_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_target, 2)
+        # obs_tkzd_title_rm_stpwds_source = self.node_dict[source_id]["tkzd_title_rm_stpwds"]
+        # obs_tkzd_title_rm_stpwds_target = self.node_dict[target_id]["tkzd_title_rm_stpwds"]
+        # bigrams_tkzd_title_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_source, 2)
+        # bigrams_tkzd_title_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_target, 2)
 
-        jaccard_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(obs_tkzd_title_rm_stpwds_source,
-                                                                obs_tkzd_title_rm_stpwds_target)
-        dice_tkzd_title_rm_stpwds = dist_utils._dice_dist(obs_tkzd_title_rm_stpwds_source,
-                                                          obs_tkzd_title_rm_stpwds_target)
-        jaccard_bigr_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(bigrams_tkzd_title_rm_stpwds_source,
-                                                                     bigrams_tkzd_title_rm_stpwds_target)
-        dice_bigr_tkzd_title_rm_stpwds = dist_utils._dice_dist(bigrams_tkzd_title_rm_stpwds_source,
-                                                               bigrams_tkzd_title_rm_stpwds_target)
+        # jaccard_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(obs_tkzd_title_rm_stpwds_source,
+        #                                                         obs_tkzd_title_rm_stpwds_target)
+        # dice_tkzd_title_rm_stpwds = dist_utils._dice_dist(obs_tkzd_title_rm_stpwds_source,
+        #                                                   obs_tkzd_title_rm_stpwds_target)
+        # jaccard_bigr_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(bigrams_tkzd_title_rm_stpwds_source,
+        #                                                              bigrams_tkzd_title_rm_stpwds_target)
+        # dice_bigr_tkzd_title_rm_stpwds = dist_utils._dice_dist(bigrams_tkzd_title_rm_stpwds_source,
+        #                                                        bigrams_tkzd_title_rm_stpwds_target)
 
         # TODO: # features from self.tkzd_title_rm_stpwds_stem
 
         # features from self.data_tkzd_abstract
-        obs_tkzd_abstract_source = self.node_dict[source_id]["tkzd_abstract"]
-        obs_tkzd_abstract_target = self.node_dict[target_id]["tkzd_abstract"]
-        bigrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_abstract_source, 2)
-        bigrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_abstract_target, 2)
-        trigrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_abstract_source, 3)
-        trigrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_abstract_target, 3)
-        fourgrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_abstract_source, 4)
-        fourgrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_abstract_target, 4)
+        obs_tkzd_abstract_source = self.node_dict[ids[0]]["tkzd_abstract"]
+        obs_tkzd_abstract_target = self.node_dict[ids[1]]["tkzd_abstract"]
+        bigrams_tkzd_abstract_source = list(nltk.bigrams(obs_tkzd_abstract_source))
+        bigrams_tkzd_abstract_target = list(nltk.bigrams(obs_tkzd_abstract_target))
+        trigrams_tkzd_abstract_source = list(nltk.trigrams(obs_tkzd_abstract_source))
+        trigrams_tkzd_abstract_target = list(nltk.trigrams(obs_tkzd_abstract_target))
+        # fourgrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_abstract_source, 4)
+        # fourgrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_abstract_target, 4)
 
-        biterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_abstract_source, 2)
-        biterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_abstract_target, 2)
-        triterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_abstract_source, 3)
-        triterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_abstract_target, 3)
-        fourterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_abstract_source, 4)
-        fourterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_abstract_target, 4)
+        # biterms_tkzd_abstract_source = list(nltk.bigrams(obs_tkzd_abstract_source))
+        # biterms_tkzd_abstract_target = list(nltk.bigrams(obs_tkzd_abstract_target))
+        # triterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_abstract_source, 3)
+        # triterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_abstract_target, 3)
+        # fourterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_abstract_source, 4)
+        # fourterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_abstract_target, 4)
 
         jaccard_tkzd_abstract = dist_utils._jaccard_coef(obs_tkzd_abstract_source, obs_tkzd_abstract_target)
         jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_abstract_source,
                                                               bigrams_tkzd_abstract_target)
         jaccard_trigr_tkzd_abstract = dist_utils._jaccard_coef(trigrams_tkzd_abstract_source,
                                                                trigrams_tkzd_abstract_target)
-        jaccard_fourgr_tkzd_abstract = dist_utils._jaccard_coef(fourgrams_tkzd_abstract_source,
-                                                                fourgrams_tkzd_abstract_target)
-        jaccard_bitm_tkzd_abstract = dist_utils._jaccard_coef(biterms_tkzd_abstract_source,
-                                                              biterms_tkzd_abstract_target)
-        jaccard_tritm_tkzd_abstract = dist_utils._jaccard_coef(triterms_tkzd_abstract_source,
-                                                               triterms_tkzd_abstract_target)
-        jaccard_fourtm_tkzd_abstract = dist_utils._jaccard_coef(fourterms_tkzd_abstract_source,
-                                                                fourterms_tkzd_abstract_target)
+        # jaccard_fourgr_tkzd_abstract = dist_utils._jaccard_coef(fourgrams_tkzd_abstract_source,
+        #                                                         fourgrams_tkzd_abstract_target)
+        # jaccard_bitm_tkzd_abstract = dist_utils._jaccard_coef(biterms_tkzd_abstract_source,
+        #                                                       biterms_tkzd_abstract_target)
+        # jaccard_tritm_tkzd_abstract = dist_utils._jaccard_coef(triterms_tkzd_abstract_source,
+        #                                                        triterms_tkzd_abstract_target)
+        # jaccard_fourtm_tkzd_abstract = dist_utils._jaccard_coef(fourterms_tkzd_abstract_source,
+        #                                                         fourterms_tkzd_abstract_target)
 
         dice_tkzd_abstract = dist_utils._dice_dist(obs_tkzd_abstract_source, obs_tkzd_abstract_target)
         dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_abstract_source, bigrams_tkzd_abstract_target)
         dice_trigr_tkzd_abstract = dist_utils._dice_dist(trigrams_tkzd_abstract_source,
                                                          trigrams_tkzd_abstract_target)
-        dice_fourgr_tkzd_abstract = dist_utils._dice_dist(fourgrams_tkzd_abstract_source,
-                                                          fourgrams_tkzd_abstract_target)
-        dice_bitm_tkzd_abstract = dist_utils._dice_dist(biterms_tkzd_abstract_source, biterms_tkzd_abstract_target)
-        dice_tritm_tkzd_abstract = dist_utils._dice_dist(triterms_tkzd_abstract_source,
-                                                         triterms_tkzd_abstract_target)
-        dice_fourtm_tkzd_abstract = dist_utils._dice_dist(fourterms_tkzd_abstract_source,
-                                                          fourterms_tkzd_abstract_target)
+        # dice_fourgr_tkzd_abstract = dist_utils._dice_dist(fourgrams_tkzd_abstract_source,
+        #                                                   fourgrams_tkzd_abstract_target)
+        # dice_bitm_tkzd_abstract = dist_utils._dice_dist(biterms_tkzd_abstract_source, biterms_tkzd_abstract_target)
+        # dice_tritm_tkzd_abstract = dist_utils._dice_dist(triterms_tkzd_abstract_source,
+        #                                                  triterms_tkzd_abstract_target)
+        # dice_fourtm_tkzd_abstract = dist_utils._dice_dist(fourterms_tkzd_abstract_source,
+        #                                                   fourterms_tkzd_abstract_target)
 
         # features from self.data_tkzd_abstract_rm_stpwds
-        obs_tkzd_abstract_rm_stpwds_source = self.node_dict[source_id]["tkzd_abstract_rm_stpwds"]
-        obs_tkzd_abstract_rm_stpwds_target = self.node_dict[target_id]["tkzd_abstract_rm_stpwds"]
-        bigrams_tkzd_abstract_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_source, 2)
-        bigrams_tkzd_abstract_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_target, 2)
-        trigrams_tkzd_abstract_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_source, 3)
-        trigrams_tkzd_abstract_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_target, 3)
-        fourgrams_tkzd_abstract_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_source, 4)
-        fourgrams_tkzd_abstract_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_target, 4)
+        obs_tkzd_abstract_rm_stpwds_source = self.node_dict[ids[0]]["tkzd_abstract_rm_stpwds"]
+        obs_tkzd_abstract_rm_stpwds_target = self.node_dict[ids[1]]["tkzd_abstract_rm_stpwds"]
+        bigrams_tkzd_abstract_rm_stpwds_source = list(nltk.bigrams(obs_tkzd_abstract_rm_stpwds_source))
+        bigrams_tkzd_abstract_rm_stpwds_target = list(nltk.bigrams(obs_tkzd_abstract_rm_stpwds_target))
+        trigrams_tkzd_abstract_rm_stpwds_source = list(nltk.trigrams(obs_tkzd_abstract_rm_stpwds_source))
+        trigrams_tkzd_abstract_rm_stpwds_target = list(nltk.trigrams(obs_tkzd_abstract_rm_stpwds_target))
+        # fourgrams_tkzd_abstract_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_source, 4)
+        # fourgrams_tkzd_abstract_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_target, 4)
 
-        biterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 2)
-        biterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 2)
-        triterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 3)
-        triterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 3)
-        fourterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 4)
-        fourterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 4)
+        # biterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 2)
+        # biterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 2)
+        # triterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 3)
+        # triterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 3)
+        # fourterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 4)
+        # fourterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 4)
 
         jaccard_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(obs_tkzd_abstract_rm_stpwds_source,
                                                                    obs_tkzd_abstract_rm_stpwds_target)
@@ -167,14 +176,14 @@ class Data():
                                                                         bigrams_tkzd_abstract_rm_stpwds_target)
         jaccard_trigr_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(trigrams_tkzd_abstract_rm_stpwds_source,
                                                                          trigrams_tkzd_abstract_rm_stpwds_target)
-        jaccard_fourgr_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(fourgrams_tkzd_abstract_rm_stpwds_source,
-                                                                          fourgrams_tkzd_abstract_rm_stpwds_target)
-        jaccard_bitm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(biterms_tkzd_abstract_rm_stpwds_source,
-                                                                        biterms_tkzd_abstract_rm_stpwds_target)
-        jaccard_tritm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(triterms_tkzd_abstract_rm_stpwds_source,
-                                                                         triterms_tkzd_abstract_rm_stpwds_target)
-        jaccard_fourtm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(fourterms_tkzd_abstract_rm_stpwds_source,
-                                                                          fourterms_tkzd_abstract_rm_stpwds_target)
+        # jaccard_fourgr_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(fourgrams_tkzd_abstract_rm_stpwds_source,
+        #                                                                   fourgrams_tkzd_abstract_rm_stpwds_target)
+        # jaccard_bitm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(biterms_tkzd_abstract_rm_stpwds_source,
+        #                                                                 biterms_tkzd_abstract_rm_stpwds_target)
+        # jaccard_tritm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(triterms_tkzd_abstract_rm_stpwds_source,
+        #                                                                  triterms_tkzd_abstract_rm_stpwds_target)
+        # jaccard_fourtm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(fourterms_tkzd_abstract_rm_stpwds_source,
+        #                                                                   fourterms_tkzd_abstract_rm_stpwds_target)
 
         dice_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(obs_tkzd_abstract_rm_stpwds_source,
                                                              obs_tkzd_abstract_rm_stpwds_target)
@@ -182,59 +191,34 @@ class Data():
                                                                   bigrams_tkzd_abstract_rm_stpwds_target)
         dice_trigr_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(trigrams_tkzd_abstract_rm_stpwds_source,
                                                                    trigrams_tkzd_abstract_rm_stpwds_target)
-        dice_fourgr_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(fourgrams_tkzd_abstract_rm_stpwds_source,
-                                                                    fourgrams_tkzd_abstract_rm_stpwds_target)
-        dice_bitm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(biterms_tkzd_abstract_rm_stpwds_source,
-                                                                  biterms_tkzd_abstract_rm_stpwds_target)
-        dice_tritm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(triterms_tkzd_abstract_rm_stpwds_source,
-                                                                   triterms_tkzd_abstract_rm_stpwds_target)
-        dice_fourtm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(fourterms_tkzd_abstract_rm_stpwds_source,
-                                                                    fourterms_tkzd_abstract_rm_stpwds_target)
+        # dice_fourgr_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(fourgrams_tkzd_abstract_rm_stpwds_source,
+        #                                                             fourgrams_tkzd_abstract_rm_stpwds_target)
+        # dice_bitm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(biterms_tkzd_abstract_rm_stpwds_source,
+        #                                                           biterms_tkzd_abstract_rm_stpwds_target)
+        # dice_tritm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(triterms_tkzd_abstract_rm_stpwds_source,
+        #                                                            triterms_tkzd_abstract_rm_stpwds_target)
+        # dice_fourtm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(fourterms_tkzd_abstract_rm_stpwds_source,
+        #                                                             fourterms_tkzd_abstract_rm_stpwds_target)
 
         # TODO: # features from self.data_tkzd_abstract_rm_stpwds_stem
 
-        output_list.append(jaccard_tkzd_title)
-        output_list.append(dice_tkzd_title)
-        output_list.append(jaccard_bigr_tkzd_title)
-        output_list.append(dice_bigr_tkzd_title)
-        output_list.append(jaccard_tkzd_title_rm_stpwds)
-        output_list.append(dice_tkzd_title_rm_stpwds)
-        output_list.append(jaccard_bigr_tkzd_title_rm_stpwds)
-        output_list.append(dice_bigr_tkzd_title_rm_stpwds)
+        result = pd.Series([jaccard_tkzd_title,
+                            dice_tkzd_title,
+                            jaccard_tkzd_abstract,
+                            jaccard_bigr_tkzd_abstract,
+                            jaccard_trigr_tkzd_abstract,
+                            dice_tkzd_abstract,
+                            dice_bigr_tkzd_abstract,
+                            dice_trigr_tkzd_abstract,
+                            jaccard_tkzd_abstract_rm_stpwds,
+                            jaccard_bigr_tkzd_abstract_rm_stpwds,
+                            jaccard_trigr_tkzd_abstract_rm_stpwds,
+                            dice_tkzd_abstract_rm_stpwds,
+                            dice_bigr_tkzd_abstract_rm_stpwds,
+                            dice_trigr_tkzd_abstract_rm_stpwds,
+                            ])
 
-        output_list.append(jaccard_tkzd_abstract)
-        output_list.append(jaccard_bigr_tkzd_abstract)
-        output_list.append(jaccard_trigr_tkzd_abstract)
-        output_list.append(jaccard_fourgr_tkzd_abstract)
-        output_list.append(jaccard_bitm_tkzd_abstract)
-        output_list.append(jaccard_tritm_tkzd_abstract)
-        output_list.append(jaccard_fourtm_tkzd_abstract)
-
-        output_list.append(dice_tkzd_abstract)
-        output_list.append(dice_bigr_tkzd_abstract)
-        output_list.append(dice_trigr_tkzd_abstract)
-        output_list.append(dice_fourgr_tkzd_abstract)
-        output_list.append(dice_bitm_tkzd_abstract)
-        output_list.append(dice_tritm_tkzd_abstract)
-        output_list.append(dice_fourtm_tkzd_abstract)
-
-        output_list.append(jaccard_tkzd_abstract_rm_stpwds)
-        output_list.append(jaccard_bigr_tkzd_abstract_rm_stpwds)
-        output_list.append(jaccard_trigr_tkzd_abstract_rm_stpwds)
-        output_list.append(jaccard_fourgr_tkzd_abstract_rm_stpwds)
-        output_list.append(jaccard_bitm_tkzd_abstract_rm_stpwds)
-        output_list.append(jaccard_tritm_tkzd_abstract_rm_stpwds)
-        output_list.append(jaccard_fourtm_tkzd_abstract_rm_stpwds)
-
-        output_list.append(dice_tkzd_abstract_rm_stpwds)
-        output_list.append(dice_bigr_tkzd_abstract_rm_stpwds)
-        output_list.append(dice_trigr_tkzd_abstract_rm_stpwds)
-        output_list.append(dice_fourgr_tkzd_abstract_rm_stpwds)
-        output_list.append(dice_bitm_tkzd_abstract_rm_stpwds)
-        output_list.append(dice_tritm_tkzd_abstract_rm_stpwds)
-        output_list.append(dice_fourtm_tkzd_abstract_rm_stpwds)
-
-        return output_list
+        return result
             # file = open("/media/gaofangshu/Windows/GaoFangshu/RUC/project/feature_nlp.txt", "a+")
             # file.write(output_list)
             # file.write("\n")
@@ -243,45 +227,6 @@ class Data():
             # if counter % 10 == 0:
             #     sys.stdout.write("\rPreparing features: %.1f%%" % (100 * counter / size))
             #     sys.stdout.flush()
-
-        # print("nlp features finished")
-
-        # self.feature = np.array([fea_jaccard_tkzd_title,
-        #                          fea_dice_tkzd_title,
-        #                          fea_jaccard_bigr_tkzd_title,
-        #                          fea_dice_bigr_tkzd_title,
-        #                          fea_jaccard_tkzd_title_rm_stpwds,
-        #                          fea_dice_tkzd_title_rm_stpwds,
-        #                          fea_jaccard_bigr_tkzd_title_rm_stpwds,
-        #                          fea_dice_bigr_tkzd_title_rm_stpwds,
-        #                          fea_jaccard_tkzd_abstract,
-        #                          fea_jaccard_bigr_tkzd_abstract,
-        #                          fea_jaccard_trigr_tkzd_abstract,
-        #                          fea_jaccard_fourgr_tkzd_abstract,
-        #                          fea_jaccard_bitm_tkzd_abstract,
-        #                          fea_jaccard_tritm_tkzd_abstract,
-        #                          fea_jaccard_fourtm_tkzd_abstract,
-        #                          fea_dice_tkzd_abstract,
-        #                          fea_dice_bigr_tkzd_abstract,
-        #                          fea_dice_trigr_tkzd_abstract,
-        #                          fea_dice_fourgr_tkzd_abstract,
-        #                          fea_dice_bitm_tkzd_abstract,
-        #                          fea_dice_tritm_tkzd_abstract,
-        #                          fea_dice_fourtm_tkzd_abstract,
-        #                          fea_jaccard_tkzd_abstract_rm_stpwds,
-        #                          fea_jaccard_bigr_tkzd_abstract_rm_stpwds,
-        #                          fea_jaccard_trigr_tkzd_abstract_rm_stpwds,
-        #                          fea_jaccard_fourgr_tkzd_abstract_rm_stpwds,
-        #                          fea_jaccard_bitm_tkzd_abstract_rm_stpwds,
-        #                          fea_jaccard_tritm_tkzd_abstract_rm_stpwds,
-        #                          fea_jaccard_fourtm_tkzd_abstract_rm_stpwds,
-        #                          fea_dice_tkzd_abstract_rm_stpwds,
-        #                          fea_dice_bigr_tkzd_abstract_rm_stpwds,
-        #                          fea_dice_trigr_tkzd_abstract_rm_stpwds,
-        #                          fea_dice_fourgr_tkzd_abstract_rm_stpwds,
-        #                          fea_dice_bitm_tkzd_abstract_rm_stpwds,
-        #                          fea_dice_tritm_tkzd_abstract_rm_stpwds,
-        #                          fea_dice_fourtm_tkzd_abstract_rm_stpwds]).T
 
     def load_data(self):
         # (0) paper unique ID (integer)
@@ -371,8 +316,29 @@ class Data():
 if __name__ == '__main__':
     data = Data(sample=True)
     data.load_data()
-    data.sample(prop=0.01)
+    data.sample(prop=1)
     data.prepare_data()
     # data.get_features()
+    training_features = data.get_batch(0, data.data_train.shape[0], "train")
+    training_index = training_features.index
+    # scale
+    training_features = preprocessing.scale(training_features)
 
-    print('')
+    labels_array = data.data_train["predict"][training_index]
+    print("evaluating")
+
+    # evaluation
+    kf = KFold(training_features.shape[0], n_folds=10)
+    sumf1 = 0
+    for train_index, test_index in kf:
+        X_train, X_test = training_features[train_index], training_features[test_index]
+        y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
+        # initialize basic SVM
+        classifier = svm.LinearSVC()
+        # train
+        classifier.fit(X_train, y_train)
+        pred = classifier.predict(X_test)
+        sumf1 += f1_score(pred, y_test)
+
+    print("\n\n")
+    print(sumf1 / 10.0)
