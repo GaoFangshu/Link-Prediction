@@ -20,6 +20,7 @@ from utils import ngram_utils, dist_utils, np_utils
 DIR_TRIAN = "social_train.txt"
 DIR_TEST = "social_test.txt"
 DIR_NODEINFO = "node_information.csv"
+PREDICT = "randomprediction.csv"
 
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
@@ -305,7 +306,9 @@ class Data():
 
         print("data prepared")
 
-
+    def predict(self):
+        # TODO
+        pass
 
     def get_observation(self):
         # get observation from self.node_info_set
@@ -340,5 +343,14 @@ if __name__ == '__main__':
         pred = classifier.predict(X_test)
         sumf1 += f1_score(pred, y_test)
 
-    print("\n\n")
+    print("\n\nTest on training set")
     print(sumf1 / 10.0)
+
+    testing_features = data.get_batch(0, data.data_test.shape[0], "test")
+    testing_index = testing_features.index
+    testing_features = preprocessing.scale(testing_features)
+    X_testing = testing_features[testing_index]
+    pred_testing = classifier.predict(X_testing)
+    predict = pd.read_csv(PREDICT, sep=",")
+    predict["prediction"] = pred_testing
+    predict.to_csv("prediction", index=False)
