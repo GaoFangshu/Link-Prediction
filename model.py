@@ -10,6 +10,7 @@ import pandas as pd
 import nltk
 import sys
 import time
+import re
 from utils import ngram_utils, dist_utils, np_utils
 
 DIR_TRIAN = "social_train.txt"
@@ -420,7 +421,8 @@ class Data():
         self.data_node_info["data_tkzd_title_rm_stpwds_stem"] = tkzd_title_rm_stpwds_stem
 
         # authors
-        tkzd_author = self.data_node_info["author"].apply(lambda x: x.lower().split(",") if x is not np.nan else np.nan)
+        re_author = self.data_node_info["author"].apply(lambda x: re.sub(r'\(.*\)|\s', "", x) if x is not np.nan else np.nan)    # delete contents in brackets and useless space
+        tkzd_author = re_author.apply(lambda x: x.lower().split(",") if x is not np.nan else np.nan)
         self.data_node_info["tkzd_author"] = tkzd_author
         # TODO: handle (School) (number)
 
