@@ -11,6 +11,7 @@ import nltk
 import sys
 import time
 import re
+import igraph
 from sklearn import svm
 from sklearn import preprocessing
 from sklearn.cross_validation import KFold
@@ -29,6 +30,7 @@ STPWDS = set(nltk.corpus.stopwords.words("english"))
 
 class Data():
     def __init__(self, sample):
+
         assert type(sample) == bool
         self.stemmer = nltk.stem.PorterStemmer()
         # the columns of the node data frame below are:
@@ -45,7 +47,9 @@ class Data():
 
         self.node_dict = None
 
-
+        # graph
+        self.graph = igraph.Graph(directed=True)
+        self.id_graphid = {}
         # self.data_tkzd_title = []
         # self.data_tkzd_title_rm_stpwds = []
         # self.data_tkzd_title_rm_stpwds_stem = []
@@ -240,18 +244,28 @@ class Data():
         self.data_test = pd.read_csv(DIR_TEST, names=["id_source", "id_target"], header=None, sep=" ")
         self.data_node_info = pd.read_csv(DIR_NODEINFO, names=["id", "year", "title", "author", "journal", "abstract"], header=None)
 
+    def init_graph(self):
+        # run after `prepare_data`, need self.node_dict
+        self.graph.add_vertices(list(self.node_dict.keys()))
+
+        for i in range(self.node_dict.__len__()):
+            self.id_graphid[self.graph.vs["name"][i]] = i
+        edges = self.data_train[["id_source", "id_target"]].apply(self.get_direct, axis=1)
+        self.graph.add_edges(edges.tolist())
 
 
     def get_direct(self, ids):
+        # need self.id_graphid
         # input: int: id1 and id2
-        # output: tuple: (from_id, to_id)
+        # output: tuple: (from_graph_id, to_graph_id)
         # year(from_id) >= year(to_id)
-        year_id1 = self.data_node_info["year"][self.data_node_info["id"] == ids[0]].iloc[0]  # TODO: risky because id may not unique
-        year_id2 = self.data_node_info["year"][self.data_node_info["id"] == ids[1]].iloc[0]
+
+        year_id1 = self.node_dict[ids[0]]["year"]
+        year_id2 = self.node_dict[ids[1]]["year"]
         if year_id1 >= year_id2:  # TODO: how to deal with papers in same year, I ignore it now
-            return (ids[0], ids[1])
+            return (self.id_graphid[ids[0]], self.id_graphid[ids[1]])
         else:
-            return (ids[1], ids[0])
+            return (self.id_graphid[ids[1]], self.id_graphid[ids[0]])
 
     def get_valid_ids(self, data):
         assert type(dir) == list
@@ -334,6 +348,7 @@ if __name__ == '__main__':
     data.load_data()
     data.sample(prop=1)
     data.prepare_data()
+    data.init_graph()
     # data.get_features()
     training_features = data.get_batch(0, data.data_train.shape[0], "train")
     training_index = training_features.index

@@ -3,8 +3,9 @@ from model import Data
 
 data = Data(sample=True)
 data.load_data()
-data.sample(prop=0.01)
-
+data.sample(prop=1)
+data.prepare_data()
+data.init_graph()
 
 #
 # def get_ddirect(ids):
@@ -21,10 +22,18 @@ data.sample(prop=0.01)
 #     else:
 #         return (ids[1], ids[0])
 
-data.data_train[["id_source", "id_target"]].iloc[0:2].apply(data.get_direct, axis=1)
+edges = data.data_train[["id_source", "id_target"]].iloc[0:3].apply(data.get_direct, axis=1)
 
+
+edges.tolist()
 
 g=igraph.Graph(directed=True)
 
-g.add_vertices(["1","3","5","7"])
-g.add_edges([("1","3"), ("7","5"), ("3","1")])
+g.add_vertices(list(data.node_dict.keys()))
+g.add_edges(edges.tolist())
+g.add_edges([('204235', '9812066'),('9905020', '9310158')])
+
+id_graphid= {}
+
+for i in range(data.node_dict.__len__()):
+    id_graphid[g.vs["name"][i]] = i
