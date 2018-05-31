@@ -240,6 +240,21 @@ class Data():
         self.data_test = pd.read_csv(DIR_TEST, names=["id_source", "id_target"], header=None, sep=" ")
         self.data_node_info = pd.read_csv(DIR_NODEINFO, names=["id", "year", "title", "author", "journal", "abstract"], header=None)
 
+
+
+    def get_direct(self, ids):
+        # input: int: id1 and id2
+        # output: tuple: (from_id, to_id)
+        # year(from_id) >= year(to_id)
+        year_id1 = self.data_node_info["year"][self.data_node_info["id"]==ids[0]][0]    # TODO: risky because id may not unique
+        year_id2 = self.data_node_info["year"][self.data_node_info["id"] == ids[1]][0]
+        print(year_id1)
+        print(year_id2)
+        if year_id1 >= year_id2:    # TODO: how to deal with papers in same year, I ignore it now
+            return (year_id1, year_id2)
+        else:
+            return (year_id2, year_id1)
+
     def get_valid_ids(self, data):
         assert type(dir) == list
         valid_ids = set()
