@@ -78,8 +78,26 @@ class Data():
             batch_data = self.data_train.iloc[from_iloc: to_iloc]
         if data_set == "test":
             batch_data = self.data_test.iloc[from_iloc: to_iloc]
-        result = batch_data[["id_source","id_target"]].apply(self.get_features, axis=1)
-        return result
+        print("getting node features")
+        result1 = batch_data[["id_source","id_target"]].apply(self.get_features, axis=1)
+        print("getting network features")
+        result2 = batch_data[["id_source", "id_target"]].apply(self.get_graph_simi, axis=1)
+        return [result1, result2]
+
+    def get_graph_simi(self, ids):
+        # ids is from data.data_train[["id_source", "id_target"]].apply(..., axis=1)
+        graphids = self.get_direct(ids)
+        graphid_from = graphids[0]
+        graphid_to = graphids[1]
+
+        graphid_in = pd.Series(self.graph.neighbors(graphid_to, mode="IN"))
+        simi_dice_in = graphid_in.apply(self.simi_dice, args=(graphid_from,))
+        return np.mean(simi_dice_in)
+
+    def simi_dice(self, graphid_in, graphid_from):
+        # calculate
+        simi_dice = self.graph.similarity_jaccard(vertices=(graphid_in, graphid_from), mode="OUT", loops=False)[0][1]
+        return simi_dice
 
     def get_features(self, ids):
         # ids = [source_id, target_id]
@@ -350,35 +368,42 @@ if __name__ == '__main__':
     data.prepare_data()
     data.init_graph()
     # data.get_features()
+    t0 = time.clock()
     training_features = data.get_batch(0, data.data_train.shape[0], "train")
-    training_index = training_features.index
-    # scale
-    training_features = preprocessing.scale(training_features)
-
-    labels_array = data.data_train["predict"][training_index]
-    print("evaluating")
-
-    # evaluation
-    kf = KFold(training_features.shape[0], n_folds=10)
-    sumf1 = 0
-    for train_index, test_index in kf:
-        X_train, X_test = training_features[train_index], training_features[test_index]
-        y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
-        # initialize basic SVM
-        classifier = svm.LinearSVC()
-        # train
-        classifier.fit(X_train, y_train)
-        pred = classifier.predict(X_test)
-        sumf1 += f1_score(pred, y_test)
-
-    print("\n\nTest on training set")
-    print(sumf1 / 10.0)
-
-    testing_features = data.get_batch(0, data.data_test.shape[0], "test")
-    testing_index = testing_features.index
-    testing_features = preprocessing.scale(testing_features)
-    X_testing = testing_features[testing_index]
-    pred_testing = classifier.predict(X_testing)
-    predict = pd.read_csv(PREDICT, sep=",")
-    predict["prediction"] = pred_testing
-    predict.to_csv("prediction", index=False)
+    print(time.clock() - t0)
+    print("saving features")
+    training_features.to_csv("features")
+    #
+    #
+    #
+    # training_index = training_features.index
+    # # scale
+    # training_features = preprocessing.scale(training_features)
+    #
+    # labels_array = data.data_train["predict"][training_index]
+    # print("evaluating")
+    #
+    # # evaluation
+    # kf = KFold(training_features.shape[0], n_folds=10)
+    # sumf1 = 0
+    # for train_index, test_index in kf:
+    #     X_train, X_test = training_features[train_index], training_features[test_index]
+    #     y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
+    #     # initialize basic SVM
+    #     classifier = svm.LinearSVC()
+    #     # train
+    #     classifier.fit(X_train, y_train)
+    #     pred = classifier.predict(X_test)
+    #     sumf1 += f1_score(pred, y_test)
+    #
+    # print("\n\nTest on training set")
+    # print(sumf1 / 10.0)
+    #
+    # testing_features = data.get_batch(0, data.data_test.shape[0], "test")
+    # testing_index = testing_features.index
+    # testing_features = preprocessing.scale(testing_features)
+    # X_testing = testing_features[testing_index]
+    # pred_testing = classifier.predict(X_testing)
+    # predict = pd.read_csv(PREDICT, sep=",")
+    # predict["prediction"] = pred_testing
+    # predict.to_csv("prediction", index=False)
