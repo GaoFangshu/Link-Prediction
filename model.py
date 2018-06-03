@@ -368,42 +368,52 @@ if __name__ == '__main__':
     data.prepare_data()
     data.init_graph()
     # data.get_features()
-    t0 = time.clock()
-    training_features = data.get_batch(0, data.data_train.shape[0], "train")
-    print(time.clock() - t0)
-    print("saving features")
-    training_features.to_csv("features")
-    #
-    #
-    #
-    # training_index = training_features.index
-    # # scale
-    # training_features = preprocessing.scale(training_features)
-    #
-    # labels_array = data.data_train["predict"][training_index]
-    # print("evaluating")
-    #
-    # # evaluation
-    # kf = KFold(training_features.shape[0], n_folds=10)
-    # sumf1 = 0
-    # for train_index, test_index in kf:
-    #     X_train, X_test = training_features[train_index], training_features[test_index]
-    #     y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
-    #     # initialize basic SVM
-    #     classifier = svm.LinearSVC()
-    #     # train
-    #     classifier.fit(X_train, y_train)
-    #     pred = classifier.predict(X_test)
-    #     sumf1 += f1_score(pred, y_test)
-    #
-    # print("\n\nTest on training set")
-    # print(sumf1 / 10.0)
-    #
-    # testing_features = data.get_batch(0, data.data_test.shape[0], "test")
-    # testing_index = testing_features.index
-    # testing_features = preprocessing.scale(testing_features)
-    # X_testing = testing_features[testing_index]
-    # pred_testing = classifier.predict(X_testing)
-    # predict = pd.read_csv(PREDICT, sep=",")
-    # predict["prediction"] = pred_testing
-    # predict.to_csv("prediction", index=False)
+    # t0 = time.clock()
+    # training_features = data.get_batch(0, data.data_train.shape[0], "train")
+    # print(time.clock() - t0)
+    # print("saving features")
+    # training_features[0].to_csv("features_node")
+    # training_features[1].to_csv("features_network")
+    features_node = pd.read_csv("features_node", header=None, index_col=0)
+    features_network = pd.read_csv("features_network", header=None, index_col=0)
+    training_features = pd.concat([features_node, features_network], axis=1)
+
+    training_index = training_features.index
+    # scale
+    training_features = preprocessing.scale(training_features)
+
+    labels_array = data.data_train["predict"][training_index]
+    print("evaluating")
+
+    # evaluation
+    kf = KFold(training_features.shape[0], n_folds=10)
+    sumf1 = 0
+    for train_index, test_index in kf:
+        X_train, X_test = training_features[train_index], training_features[test_index]
+        y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
+        # initialize basic SVM
+        classifier = svm.LinearSVC()
+        # train
+        classifier.fit(X_train, y_train)
+        pred = classifier.predict(X_test)
+        sumf1 += f1_score(pred, y_test)
+
+    print("\n\nTest on training set")
+    print(sumf1 / 10.0)
+
+    test_features = data.get_batch(0, data.data_test.shape[0], "test")
+    test_features[0].to_csv("test_features_node")
+    test_features[1].to_csv("test_features_network")
+    test_features_node = test_features[0]
+    test_features_network = test_features[1]
+    # test_features_node = pd.read_csv("test_features_node", header=None, index_col=0)
+    # test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
+    testing_features = pd.concat([test_features_node, test_features_network], axis=1)
+
+    testing_index = testing_features.index
+    testing_features = preprocessing.scale(testing_features)
+    X_testing = testing_features[testing_index]
+    pred_testing = classifier.predict(X_testing)
+    predict = pd.read_csv(PREDICT, sep=",")
+    predict["prediction"] = pred_testing
+    predict.to_csv("prediction", index=False)
