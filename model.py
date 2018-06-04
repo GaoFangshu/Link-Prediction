@@ -28,6 +28,10 @@ DIR_TEST = "social_test.txt"
 DIR_NODEINFO = "node_information.csv"
 PREDICT = "randomprediction.csv"
 
+RUN_FOR_FIRST_TIME = True
+SUBMIT = False
+LOAD_SAMPLE = False
+
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
 STPWDS = set(nltk.corpus.stopwords.words("english"))
@@ -47,6 +51,7 @@ class Data():
         # (5) abstract (string) - lowercased, free of punctuation except intra-word dashes
 
         self.data_trian = None
+        self.data_train_positive = None
         self.data_test = None
         self.data_node_info = None
 
@@ -54,7 +59,7 @@ class Data():
 
         # graph
         self.graph_paper = igraph.Graph(directed=True)
-        self.id_graphid = {}
+        self.id_graphid_paper = {}
 
 
     def sample(self, prop, load = False):
@@ -63,9 +68,11 @@ class Data():
             features_node = pd.read_csv("features_node", header=None, index_col=0)
             features_index = features_node.index
             self.data_train = self.data_train.ix[features_index]
+            self.data_train_positive = self.data_train[self.data_train["predict"] == 1]
         else:
             to_keep = random.sample(range(self.data_train.shape[0]), k=int(round(self.data_train.shape[0] * prop)))
             self.data_train = self.data_train.iloc[to_keep]
+            self.data_train_positive = self.data_train[self.data_train["predict"] == 1]
 
     def get_batch(self, from_iloc, to_iloc, data_set, get_item):
         # ids from self.data_train
@@ -73,14 +80,14 @@ class Data():
             batch_data = self.data_train.iloc[from_iloc: to_iloc]
         if data_set == "test":
             batch_data = self.data_test.iloc[from_iloc: to_iloc]
-        if get_item == "features_node":
+        if get_item == "node":
             print("getting node features")
             features_node = batch_data[["id_source","id_target"]].apply(self.get_features, axis=1)
             return features_node
-        if get_item == "features_network":
+        if get_item == "network_jaccard":
             print("getting network features")
             features_network = batch_data[["id_source", "id_target"]].apply(self.get_graph_simi, axis=1)
-            return get_item
+            return features_network
         if get_item == "page_rank":
             self.pagerank = self.graph_paper.pagerank()
             features_pagerank_from = batch_data[["id_source", "id_target"]].apply(self.get_pagerank, args=("from",), axis=1)
@@ -204,23 +211,29 @@ class Data():
         self.graph_paper.add_vertices(list(self.node_dict.keys()))
 
         for i in range(self.node_dict.__len__()):
-            self.id_graphid[self.graph_paper.vs["name"][i]] = i
-        edges = self.data_train[["id_source", "id_target"]].apply(self.get_direct, axis=1)
+            self.id_graphid_paper[self.graph_paper.vs["name"][i]] = i
+        edges = self.data_train_positive[["id_source", "id_target"]].apply(self.get_direct, axis=1)
         self.graph_paper.add_edges(edges.tolist())
 
 
-    def get_direct(self, ids):
+    def get_direct(self, ids, return_type="graph_id"):
         # need self.id_graphid
         # input: int: id1 and id2
-        # output: tuple: (from_graph_id, to_graph_id)
+        # output: tuple: (from_graph_id, to_graph_id) or (from_id, to_id)
         # year(from_id) >= year(to_id)
 
         year_id1 = self.node_dict[ids[0]]["year"]
         year_id2 = self.node_dict[ids[1]]["year"]
-        if year_id1 >= year_id2:  # TODO: how to deal with papers in same year, I ignore it now
-            return (self.id_graphid[ids[0]], self.id_graphid[ids[1]])
-        else:
-            return (self.id_graphid[ids[1]], self.id_graphid[ids[0]])
+        if return_type == "graph_id":
+            if year_id1 >= year_id2:  # TODO: how to deal with papers in same year, I ignore it now
+                return (self.id_graphid_paper[ids[0]], self.id_graphid_paper[ids[1]])
+            else:
+                return (self.id_graphid_paper[ids[1]], self.id_graphid_paper[ids[0]])
+        if return_type == "id":
+            if year_id1 >= year_id2:  # TODO: how to deal with papers in same year, I ignore it now
+                return (ids[0], ids[1])
+            else:
+                return (ids[1], ids[0])
 
     def get_valid_ids(self, data):
         assert type(dir) == list
@@ -263,7 +276,9 @@ class Data():
         self.data_node_info["tkzd_title_rm_stpwds_stem"] = tkzd_title_rm_stpwds_stem
 
         # authors
-        re_author = self.data_node_info["author"].apply(lambda x: re.sub(r'\(.*\)|\s', "", x) if x is not np.nan else np.nan)    # delete contents in brackets and useless space
+        re_author = self.data_node_info["author"].apply(lambda x: re.sub(r'\(.*?\)|\s|\\\"\"\{|\\\"\"\{\\|\\\\\'|\\\'|\\\"\"|\\\"|\\|\}|\'', "", x) if x is not np.nan else np.nan)    # delete contents in brackets and useless space
+        re_author = re_author.apply(lambda x: re.sub(r'\(.*', "", x) if x is not np.nan else np.nan)
+        re_author = re_author.apply(lambda x: re.sub(r'\&', ",", x) if x is not np.nan else np.nan)
         tkzd_author = re_author.apply(lambda x: x.lower().split(",") if x is not np.nan else np.nan)
         self.data_node_info["tkzd_author"] = tkzd_author
         # TODO: handle (School) (number)
@@ -305,104 +320,74 @@ class Data():
 if __name__ == '__main__':
     data = Data(sample=True)
     data.load_data()
-    data.sample(prop=1, load=True)
-    data.get_node_dict()
-    # data.prepare_data()
-    data.init_graph()
-    # data.get_features()
-    # t0 = time.clock()
-    # training_features = data.get_batch(0, data.data_train.shape[0], "train")
-    # print(time.clock() - t0)
-    # print("saving features")
-    # training_features[0].to_csv("features_node")
-    # training_features[1].to_csv("features_network")
-    features_node = pd.read_csv("features_node", header=None, index_col=0)
-    features_network = pd.read_csv("features_network", header=None, index_col=0)
-    features_pagerank = data.get_batch(0, data.data_train.shape[0], "train", get_item="page_rank")
-    training_features = pd.concat([features_node, features_network, features_pagerank], axis=1)
 
+    data.sample(prop=1, load=LOAD_SAMPLE)
+
+    data.get_node_dict()
+    data.prepare_data()
+    data.init_graph()
+
+    if RUN_FOR_FIRST_TIME:
+        t0 = time.clock()
+        features_node = data.get_batch(0, data.data_train.shape[0], "train", get_item="node")
+        features_network = data.get_batch(0, data.data_train.shape[0], "train", get_item="network_jaccard")
+        features_pagerank = data.get_batch(0, data.data_train.shape[0], "train", get_item="page_rank")
+        print(time.clock() - t0)
+
+        features_node.to_csv("features_node")
+        features_network.to_csv("features_network")
+        features_pagerank.to_csv("features_pagerank")
+
+        t0 = time.clock()
+        test_features_node = data.get_batch(0, data.data_test.shape[0], "test", get_item="node")
+        test_features_network = data.get_batch(0, data.data_test.shape[0], "test", get_item="network_jaccard")
+        test_features_pagerank = data.get_batch(0, data.data_test.shape[0], "test", get_item="page_rank")
+        print(time.clock() - t0)
+
+        test_features_node.to_csv("test_features_node")
+        test_features_network.to_csv("test_features_network")
+        test_features_pagerank.to_csv("test_features_pagerank")
+
+    else:
+        features_node = pd.read_csv("features_node", header=None, index_col=0)
+        features_network = pd.read_csv("features_network", header=None, index_col=0)
+        features_pagerank = pd.read_csv("features_pagerank", header=None, index_col=0)
+        test_features_node = pd.read_csv("test_features_node", header=None, index_col=0)
+        test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
+        test_features_pagerank = pd.read_csv("test_features_pagerank", header=None, index_col=0)
+
+    training_features = pd.concat([features_node, features_network, features_pagerank], axis=1)
     training_index = training_features.index
     # scale
     training_features = preprocessing.scale(training_features)
     labels_array = data.data_train["predict"][training_index]
 
-    X_train, X_test, y_train, y_test = train_test_split(training_features, labels_array, test_size=0.2, random_state=0)
+    if SUBMIT:
+        X_train = training_features
+        y_train = labels_array
 
-    # 训练模型
+        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank], axis=1)
+        testing_features = preprocessing.scale(testing_features)
+        X_test = testing_features
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(training_features, labels_array, test_size=0.2, random_state=0)
+
+    # train model
     model = xgb.XGBClassifier(max_depth=5, learning_rate=0.1, n_estimators=160, silent=True, objective="binary:logistic")
     model.fit(X_train, y_train)
 
-    # 对测试集进行预测
+    # test
     ans = model.predict(X_test)
 
-    # 计算准确率
-    f1 = f1_score(ans, y_test)
+    if not SUBMIT:
+        predict = pd.read_csv(PREDICT, sep=",")
+        predict["prediction"] = ans
+        predict.to_csv("prediction", index=False)
+    else:
+        # calculate f1
+        f1 = f1_score(ans, y_test)
+        print("F1 Accuracy: %.2f" % f1)
 
-    print("F1 Accuracy: %.2f" % f1)
-
-    # 显示重要特征
-    plot_importance(model)
-    plt.show()
-
-
-
-
-
-
-
-
-    #
-    #
-    #
-    #
-    #
-    # print("evaluating")
-    #
-    # # evaluation
-    # kf = KFold(training_features.shape[0], n_folds=10)
-    # sumf1 = 0
-    # count = 0
-    # for train_index, test_index in kf:
-    #     count += 1
-    #     print(count)
-    #     X_train, X_test = training_features[train_index], training_features[test_index]
-    #     y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
-    #     # # initialize basic SVM
-    #     # classifier = svm.LinearSVC()
-    #     # # train
-    #     # classifier.fit(X_train, y_train)
-    #     # pred = classifier.predict(X_test)
-    #     # sumf1 += f1_score(pred, y_test)
-    #     dtrain = xgb.DMatrix(X_train, label=y_train)
-    #     dtest = xgb.DMatrix(X_test, label=y_test)
-    #     evallist = [(dtest, 'eval'), (dtrain, 'train')]
-    #     num_round = 10
-    #     bst = xgb.train(plst, dtrain, num_round, evallist)
-    #
-    # print("\n\nTest on training set")
-    # print(sumf1 / 10.0)
-    #
-    # # test_features = data.get_batch(0, data.data_test.shape[0], "test")
-    # # test_features[0].to_csv("test_features_node")
-    # # test_features[1].to_csv("test_features_network")
-    # # test_features_node = test_features[0]
-    # # test_features_network = test_features[1]
-    # # test_features_node = pd.read_csv("test_features_node", header=None, index_col=0)
-    # # test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
-
-
-
-    # test_features_node_network = pd.read_csv("test_features_node_network", index_col=0)
-    # test_features_pagerank = data.get_batch(0, data.data_test.shape[0], "test", get_item="page_rank")
-    # testing_features = pd.concat([test_features_node_network, test_features_pagerank], axis=1)
-    #
-    # # testing_index = testing_features.index
-    # # testing_features = preprocessing.scale(testing_features)
-    # testing_index = test_features_node_network.index
-    # testing_features = preprocessing.scale(test_features_node_network)
-    # X_testing = testing_features[testing_index]
-    # pred_testing = model.predict(X_testing)
-    # # pred_testing = classifier.predict(X_testing)
-    # predict = pd.read_csv(PREDICT, sep=",")
-    # predict["prediction"] = pred_testing
-    # predict.to_csv("prediction", index=False)
+        # show importance
+        plot_importance(model)
+        plt.show()
