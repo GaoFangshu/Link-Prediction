@@ -15,8 +15,13 @@ import igraph
 from sklearn import svm
 from sklearn import preprocessing
 from sklearn.cross_validation import KFold
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 from utils import ngram_utils, dist_utils, np_utils
+import xgboost as xgb
+from xgboost import plot_importance
+from matplotlib import pyplot as plt
+
 
 DIR_TRIAN = "social_train.txt"
 DIR_TEST = "social_test.txt"
@@ -48,88 +53,77 @@ class Data():
         self.node_dict = None
 
         # graph
-        self.graph = igraph.Graph(directed=True)
+        self.graph_paper = igraph.Graph(directed=True)
         self.id_graphid = {}
-        # self.data_tkzd_title = []
-        # self.data_tkzd_title_rm_stpwds = []
-        # self.data_tkzd_title_rm_stpwds_stem = []
-        # self.data_tkzd_abstract = []
-        # self.data_tkzd_abstract_rm_stpwds = []
-        # self.data_tkzd_abstract_rm_stpwds_stem = []
-        #
-        # valid_ids = self.get_valid_ids(self.training_set)
-        #
-        # self.testing_set = self.split_to_list(data_test)
-        # # self.node_info_set = [element for element in data_node_info if element[0] in valid_ids]
-        # self.node_info_set = data_node_info
-        # self.node_position = self.add_position(self.node_info_set)  # {paperID : rowID in self.node_info_set}
-        #
-        # self.prepare_data()
-        # self.feature = None
 
-    def sample(self, prop):
+
+    def sample(self, prop, load = False):
         # to test code we select sample
-        to_keep = random.sample(range(self.data_train.shape[0]), k=int(round(self.data_train.shape[0] * prop)))
-        self.data_train = self.data_train.iloc[to_keep]
+        if load:
+            features_node = pd.read_csv("features_node", header=None, index_col=0)
+            features_index = features_node.index
+            self.data_train = self.data_train.ix[features_index]
+        else:
+            to_keep = random.sample(range(self.data_train.shape[0]), k=int(round(self.data_train.shape[0] * prop)))
+            self.data_train = self.data_train.iloc[to_keep]
 
-    def get_batch(self, from_iloc, to_iloc, data_set):
+    def get_batch(self, from_iloc, to_iloc, data_set, get_item):
         # ids from self.data_train
         if data_set == "train":
             batch_data = self.data_train.iloc[from_iloc: to_iloc]
         if data_set == "test":
             batch_data = self.data_test.iloc[from_iloc: to_iloc]
-        print("getting node features")
-        result1 = batch_data[["id_source","id_target"]].apply(self.get_features, axis=1)
-        print("getting network features")
-        result2 = batch_data[["id_source", "id_target"]].apply(self.get_graph_simi, axis=1)
-        return [result1, result2]
+        if get_item == "features_node":
+            print("getting node features")
+            features_node = batch_data[["id_source","id_target"]].apply(self.get_features, axis=1)
+            return features_node
+        if get_item == "features_network":
+            print("getting network features")
+            features_network = batch_data[["id_source", "id_target"]].apply(self.get_graph_simi, axis=1)
+            return get_item
+        if get_item == "page_rank":
+            self.pagerank = self.graph_paper.pagerank()
+            features_pagerank_from = batch_data[["id_source", "id_target"]].apply(self.get_pagerank, args=("from",), axis=1)
+            features_pagerank_to = batch_data[["id_source", "id_target"]].apply(self.get_pagerank, args=("to",), axis=1)
+            features_pagerank = pd.concat([features_pagerank_from, features_pagerank_to], axis=1)
+            return features_pagerank
+
+    def lookup_graph_id(self, ids):
+        # ids is from data.data_train[["id_source", "id_target"]].apply(..., axis=1)
+        graphids = self.get_direct(ids)
+        return graphids[0], graphids[1]
 
     def get_graph_simi(self, ids):
         # ids is from data.data_train[["id_source", "id_target"]].apply(..., axis=1)
-        graphids = self.get_direct(ids)
-        graphid_from = graphids[0]
-        graphid_to = graphids[1]
+        graphid_from, graphid_to = self.lookup_graph_id(ids)
 
-        graphid_in = pd.Series(self.graph.neighbors(graphid_to, mode="IN"))
+        graphid_in = pd.Series(self.graph_paper.neighbors(graphid_to, mode="IN"))
         simi_dice_in = graphid_in.apply(self.simi_dice, args=(graphid_from,))
         return np.mean(simi_dice_in)
 
+
     def simi_dice(self, graphid_in, graphid_from):
         # calculate
-        simi_dice = self.graph.similarity_jaccard(vertices=(graphid_in, graphid_from), mode="OUT", loops=False)[0][1]
+        simi_dice = self.graph_paper.similarity_jaccard(vertices=(graphid_in, graphid_from), mode="OUT", loops=False)[0][1]
         return simi_dice
+
+    def get_pagerank(self, ids, direct):
+        # self.pagerank = self.graph.pagerank() before doing this
+        graphid_from, graphid_to = self.lookup_graph_id(ids)
+        if direct == "from":
+            return self.pagerank[graphid_from]
+        if direct == "to":
+            return self.pagerank[graphid_to]
 
     def get_features(self, ids):
         # ids = [source_id, target_id]
 
-        # get base data
-        # self.data_train.merge(self.data_node_info, left_on='id_source', right_on='rkey', how='outer')
-
         # features from self.data_tkzd_title
         obs_tkzd_title_source = self.node_dict[ids[0]]["tkzd_title"]
         obs_tkzd_title_target = self.node_dict[ids[1]]["tkzd_title"]
-        # bigrams_tkzd_title_source = ngram_utils._ngrams(obs_tkzd_title_source, 2)
-        # bigrams_tkzd_title_target = ngram_utils._ngrams(obs_tkzd_title_target, 2)
 
         jaccard_tkzd_title = dist_utils._jaccard_coef(obs_tkzd_title_source, obs_tkzd_title_target)
         dice_tkzd_title = dist_utils._dice_dist(obs_tkzd_title_source, obs_tkzd_title_target)
-        # jaccard_bigr_tkzd_title = dist_utils._jaccard_coef(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
-        # dice_bigr_tkzd_title = dist_utils._dice_dist(bigrams_tkzd_title_source, bigrams_tkzd_title_target)
-
-        # features from self.data_tkzd_title_rm_stpwds
-        # obs_tkzd_title_rm_stpwds_source = self.node_dict[source_id]["tkzd_title_rm_stpwds"]
-        # obs_tkzd_title_rm_stpwds_target = self.node_dict[target_id]["tkzd_title_rm_stpwds"]
-        # bigrams_tkzd_title_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_source, 2)
-        # bigrams_tkzd_title_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_title_rm_stpwds_target, 2)
-
-        # jaccard_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(obs_tkzd_title_rm_stpwds_source,
-        #                                                         obs_tkzd_title_rm_stpwds_target)
-        # dice_tkzd_title_rm_stpwds = dist_utils._dice_dist(obs_tkzd_title_rm_stpwds_source,
-        #                                                   obs_tkzd_title_rm_stpwds_target)
-        # jaccard_bigr_tkzd_title_rm_stpwds = dist_utils._jaccard_coef(bigrams_tkzd_title_rm_stpwds_source,
-        #                                                              bigrams_tkzd_title_rm_stpwds_target)
-        # dice_bigr_tkzd_title_rm_stpwds = dist_utils._dice_dist(bigrams_tkzd_title_rm_stpwds_source,
-        #                                                        bigrams_tkzd_title_rm_stpwds_target)
 
         # TODO: # features from self.tkzd_title_rm_stpwds_stem
 
@@ -140,41 +134,17 @@ class Data():
         bigrams_tkzd_abstract_target = list(nltk.bigrams(obs_tkzd_abstract_target))
         trigrams_tkzd_abstract_source = list(nltk.trigrams(obs_tkzd_abstract_source))
         trigrams_tkzd_abstract_target = list(nltk.trigrams(obs_tkzd_abstract_target))
-        # fourgrams_tkzd_abstract_source = ngram_utils._ngrams(obs_tkzd_abstract_source, 4)
-        # fourgrams_tkzd_abstract_target = ngram_utils._ngrams(obs_tkzd_abstract_target, 4)
-
-        # biterms_tkzd_abstract_source = list(nltk.bigrams(obs_tkzd_abstract_source))
-        # biterms_tkzd_abstract_target = list(nltk.bigrams(obs_tkzd_abstract_target))
-        # triterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_abstract_source, 3)
-        # triterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_abstract_target, 3)
-        # fourterms_tkzd_abstract_source = ngram_utils._nterms(obs_tkzd_abstract_source, 4)
-        # fourterms_tkzd_abstract_target = ngram_utils._nterms(obs_tkzd_abstract_target, 4)
 
         jaccard_tkzd_abstract = dist_utils._jaccard_coef(obs_tkzd_abstract_source, obs_tkzd_abstract_target)
         jaccard_bigr_tkzd_abstract = dist_utils._jaccard_coef(bigrams_tkzd_abstract_source,
                                                               bigrams_tkzd_abstract_target)
         jaccard_trigr_tkzd_abstract = dist_utils._jaccard_coef(trigrams_tkzd_abstract_source,
                                                                trigrams_tkzd_abstract_target)
-        # jaccard_fourgr_tkzd_abstract = dist_utils._jaccard_coef(fourgrams_tkzd_abstract_source,
-        #                                                         fourgrams_tkzd_abstract_target)
-        # jaccard_bitm_tkzd_abstract = dist_utils._jaccard_coef(biterms_tkzd_abstract_source,
-        #                                                       biterms_tkzd_abstract_target)
-        # jaccard_tritm_tkzd_abstract = dist_utils._jaccard_coef(triterms_tkzd_abstract_source,
-        #                                                        triterms_tkzd_abstract_target)
-        # jaccard_fourtm_tkzd_abstract = dist_utils._jaccard_coef(fourterms_tkzd_abstract_source,
-        #                                                         fourterms_tkzd_abstract_target)
 
         dice_tkzd_abstract = dist_utils._dice_dist(obs_tkzd_abstract_source, obs_tkzd_abstract_target)
         dice_bigr_tkzd_abstract = dist_utils._dice_dist(bigrams_tkzd_abstract_source, bigrams_tkzd_abstract_target)
         dice_trigr_tkzd_abstract = dist_utils._dice_dist(trigrams_tkzd_abstract_source,
                                                          trigrams_tkzd_abstract_target)
-        # dice_fourgr_tkzd_abstract = dist_utils._dice_dist(fourgrams_tkzd_abstract_source,
-        #                                                   fourgrams_tkzd_abstract_target)
-        # dice_bitm_tkzd_abstract = dist_utils._dice_dist(biterms_tkzd_abstract_source, biterms_tkzd_abstract_target)
-        # dice_tritm_tkzd_abstract = dist_utils._dice_dist(triterms_tkzd_abstract_source,
-        #                                                  triterms_tkzd_abstract_target)
-        # dice_fourtm_tkzd_abstract = dist_utils._dice_dist(fourterms_tkzd_abstract_source,
-        #                                                   fourterms_tkzd_abstract_target)
 
         # features from self.data_tkzd_abstract_rm_stpwds
         obs_tkzd_abstract_rm_stpwds_source = self.node_dict[ids[0]]["tkzd_abstract_rm_stpwds"]
@@ -183,15 +153,6 @@ class Data():
         bigrams_tkzd_abstract_rm_stpwds_target = list(nltk.bigrams(obs_tkzd_abstract_rm_stpwds_target))
         trigrams_tkzd_abstract_rm_stpwds_source = list(nltk.trigrams(obs_tkzd_abstract_rm_stpwds_source))
         trigrams_tkzd_abstract_rm_stpwds_target = list(nltk.trigrams(obs_tkzd_abstract_rm_stpwds_target))
-        # fourgrams_tkzd_abstract_rm_stpwds_source = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_source, 4)
-        # fourgrams_tkzd_abstract_rm_stpwds_target = ngram_utils._ngrams(obs_tkzd_abstract_rm_stpwds_target, 4)
-
-        # biterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 2)
-        # biterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 2)
-        # triterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 3)
-        # triterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 3)
-        # fourterms_tkzd_abstract_rm_stpwds_source = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_source, 4)
-        # fourterms_tkzd_abstract_rm_stpwds_target = ngram_utils._nterms(obs_tkzd_abstract_rm_stpwds_target, 4)
 
         jaccard_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(obs_tkzd_abstract_rm_stpwds_source,
                                                                    obs_tkzd_abstract_rm_stpwds_target)
@@ -199,14 +160,6 @@ class Data():
                                                                         bigrams_tkzd_abstract_rm_stpwds_target)
         jaccard_trigr_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(trigrams_tkzd_abstract_rm_stpwds_source,
                                                                          trigrams_tkzd_abstract_rm_stpwds_target)
-        # jaccard_fourgr_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(fourgrams_tkzd_abstract_rm_stpwds_source,
-        #                                                                   fourgrams_tkzd_abstract_rm_stpwds_target)
-        # jaccard_bitm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(biterms_tkzd_abstract_rm_stpwds_source,
-        #                                                                 biterms_tkzd_abstract_rm_stpwds_target)
-        # jaccard_tritm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(triterms_tkzd_abstract_rm_stpwds_source,
-        #                                                                  triterms_tkzd_abstract_rm_stpwds_target)
-        # jaccard_fourtm_tkzd_abstract_rm_stpwds = dist_utils._jaccard_coef(fourterms_tkzd_abstract_rm_stpwds_source,
-        #                                                                   fourterms_tkzd_abstract_rm_stpwds_target)
 
         dice_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(obs_tkzd_abstract_rm_stpwds_source,
                                                              obs_tkzd_abstract_rm_stpwds_target)
@@ -214,14 +167,6 @@ class Data():
                                                                   bigrams_tkzd_abstract_rm_stpwds_target)
         dice_trigr_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(trigrams_tkzd_abstract_rm_stpwds_source,
                                                                    trigrams_tkzd_abstract_rm_stpwds_target)
-        # dice_fourgr_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(fourgrams_tkzd_abstract_rm_stpwds_source,
-        #                                                             fourgrams_tkzd_abstract_rm_stpwds_target)
-        # dice_bitm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(biterms_tkzd_abstract_rm_stpwds_source,
-        #                                                           biterms_tkzd_abstract_rm_stpwds_target)
-        # dice_tritm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(triterms_tkzd_abstract_rm_stpwds_source,
-        #                                                            triterms_tkzd_abstract_rm_stpwds_target)
-        # dice_fourtm_tkzd_abstract_rm_stpwds = dist_utils._dice_dist(fourterms_tkzd_abstract_rm_stpwds_source,
-        #                                                             fourterms_tkzd_abstract_rm_stpwds_target)
 
         # TODO: # features from self.data_tkzd_abstract_rm_stpwds_stem
 
@@ -242,14 +187,6 @@ class Data():
                             ])
 
         return result
-            # file = open("/media/gaofangshu/Windows/GaoFangshu/RUC/project/feature_nlp.txt", "a+")
-            # file.write(output_list)
-            # file.write("\n")
-            # file.close
-            #
-            # if counter % 10 == 0:
-            #     sys.stdout.write("\rPreparing features: %.1f%%" % (100 * counter / size))
-            #     sys.stdout.flush()
 
     def load_data(self):
         # (0) paper unique ID (integer)
@@ -264,12 +201,12 @@ class Data():
 
     def init_graph(self):
         # run after `prepare_data`, need self.node_dict
-        self.graph.add_vertices(list(self.node_dict.keys()))
+        self.graph_paper.add_vertices(list(self.node_dict.keys()))
 
         for i in range(self.node_dict.__len__()):
-            self.id_graphid[self.graph.vs["name"][i]] = i
+            self.id_graphid[self.graph_paper.vs["name"][i]] = i
         edges = self.data_train[["id_source", "id_target"]].apply(self.get_direct, axis=1)
-        self.graph.add_edges(edges.tolist())
+        self.graph_paper.add_edges(edges.tolist())
 
 
     def get_direct(self, ids):
@@ -309,7 +246,11 @@ class Data():
     def add_feature(self, feature):
         pass
 
-    def prepare_data(self):
+    def get_node_dict(self):
+        # save node data to dictionary, index is "id"
+        self.node_dict = self.data_node_info.set_index('id').T.to_dict('series')
+
+    def prepare_data(self, delete=True):
         # title
         # convert to lowercase and tokenize
         tkzd_title = self.data_node_info["title"].apply(lambda x: x.lower().split(" "))
@@ -346,8 +287,8 @@ class Data():
 
         # save node data to dictionary, index is "id"
         self.node_dict = self.data_node_info.set_index('id').T.to_dict('series')
-
-        del(self.data_node_info)
+        if delete:
+            del(self.data_node_info)
 
         print("data prepared")
 
@@ -364,8 +305,9 @@ class Data():
 if __name__ == '__main__':
     data = Data(sample=True)
     data.load_data()
-    data.sample(prop=1)
-    data.prepare_data()
+    data.sample(prop=1, load=True)
+    data.get_node_dict()
+    # data.prepare_data()
     data.init_graph()
     # data.get_features()
     # t0 = time.clock()
@@ -376,44 +318,91 @@ if __name__ == '__main__':
     # training_features[1].to_csv("features_network")
     features_node = pd.read_csv("features_node", header=None, index_col=0)
     features_network = pd.read_csv("features_network", header=None, index_col=0)
-    training_features = pd.concat([features_node, features_network], axis=1)
+    features_pagerank = data.get_batch(0, data.data_train.shape[0], "train", get_item="page_rank")
+    training_features = pd.concat([features_node, features_network, features_pagerank], axis=1)
 
     training_index = training_features.index
     # scale
     training_features = preprocessing.scale(training_features)
-
     labels_array = data.data_train["predict"][training_index]
-    print("evaluating")
 
-    # evaluation
-    kf = KFold(training_features.shape[0], n_folds=10)
-    sumf1 = 0
-    for train_index, test_index in kf:
-        X_train, X_test = training_features[train_index], training_features[test_index]
-        y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
-        # initialize basic SVM
-        classifier = svm.LinearSVC()
-        # train
-        classifier.fit(X_train, y_train)
-        pred = classifier.predict(X_test)
-        sumf1 += f1_score(pred, y_test)
+    X_train, X_test, y_train, y_test = train_test_split(training_features, labels_array, test_size=0.2, random_state=0)
 
-    print("\n\nTest on training set")
-    print(sumf1 / 10.0)
+    # 训练模型
+    model = xgb.XGBClassifier(max_depth=5, learning_rate=0.1, n_estimators=160, silent=True, objective="binary:logistic")
+    model.fit(X_train, y_train)
 
-    test_features = data.get_batch(0, data.data_test.shape[0], "test")
-    test_features[0].to_csv("test_features_node")
-    test_features[1].to_csv("test_features_network")
-    test_features_node = test_features[0]
-    test_features_network = test_features[1]
-    # test_features_node = pd.read_csv("test_features_node", header=None, index_col=0)
-    # test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
-    testing_features = pd.concat([test_features_node, test_features_network], axis=1)
+    # 对测试集进行预测
+    ans = model.predict(X_test)
 
-    testing_index = testing_features.index
-    testing_features = preprocessing.scale(testing_features)
-    X_testing = testing_features[testing_index]
-    pred_testing = classifier.predict(X_testing)
-    predict = pd.read_csv(PREDICT, sep=",")
-    predict["prediction"] = pred_testing
-    predict.to_csv("prediction", index=False)
+    # 计算准确率
+    f1 = f1_score(ans, y_test)
+
+    print("F1 Accuracy: %.2f" % f1)
+
+    # 显示重要特征
+    plot_importance(model)
+    plt.show()
+
+
+
+
+
+
+
+
+    #
+    #
+    #
+    #
+    #
+    # print("evaluating")
+    #
+    # # evaluation
+    # kf = KFold(training_features.shape[0], n_folds=10)
+    # sumf1 = 0
+    # count = 0
+    # for train_index, test_index in kf:
+    #     count += 1
+    #     print(count)
+    #     X_train, X_test = training_features[train_index], training_features[test_index]
+    #     y_train, y_test = labels_array.iloc[train_index], labels_array.iloc[test_index]
+    #     # # initialize basic SVM
+    #     # classifier = svm.LinearSVC()
+    #     # # train
+    #     # classifier.fit(X_train, y_train)
+    #     # pred = classifier.predict(X_test)
+    #     # sumf1 += f1_score(pred, y_test)
+    #     dtrain = xgb.DMatrix(X_train, label=y_train)
+    #     dtest = xgb.DMatrix(X_test, label=y_test)
+    #     evallist = [(dtest, 'eval'), (dtrain, 'train')]
+    #     num_round = 10
+    #     bst = xgb.train(plst, dtrain, num_round, evallist)
+    #
+    # print("\n\nTest on training set")
+    # print(sumf1 / 10.0)
+    #
+    # # test_features = data.get_batch(0, data.data_test.shape[0], "test")
+    # # test_features[0].to_csv("test_features_node")
+    # # test_features[1].to_csv("test_features_network")
+    # # test_features_node = test_features[0]
+    # # test_features_network = test_features[1]
+    # # test_features_node = pd.read_csv("test_features_node", header=None, index_col=0)
+    # # test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
+
+
+
+    # test_features_node_network = pd.read_csv("test_features_node_network", index_col=0)
+    # test_features_pagerank = data.get_batch(0, data.data_test.shape[0], "test", get_item="page_rank")
+    # testing_features = pd.concat([test_features_node_network, test_features_pagerank], axis=1)
+    #
+    # # testing_index = testing_features.index
+    # # testing_features = preprocessing.scale(testing_features)
+    # testing_index = test_features_node_network.index
+    # testing_features = preprocessing.scale(test_features_node_network)
+    # X_testing = testing_features[testing_index]
+    # pred_testing = model.predict(X_testing)
+    # # pred_testing = classifier.predict(X_testing)
+    # predict = pd.read_csv(PREDICT, sep=",")
+    # predict["prediction"] = pred_testing
+    # predict.to_csv("prediction", index=False)
