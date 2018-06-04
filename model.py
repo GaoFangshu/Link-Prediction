@@ -28,9 +28,9 @@ DIR_TEST = "social_test.txt"
 DIR_NODEINFO = "node_information.csv"
 PREDICT = "randomprediction.csv"
 
-RUN_FOR_FIRST_TIME = True
-SUBMIT = False
-LOAD_SAMPLE = False
+RUN_FOR_FIRST_TIME = False
+SUBMIT = True
+LOAD_SAMPLE = True
 
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
@@ -349,12 +349,15 @@ if __name__ == '__main__':
         test_features_pagerank.to_csv("test_features_pagerank")
 
     else:
-        features_node = pd.read_csv("features_node", header=None, index_col=0)
+        features_node = pd.read_csv("features_node", header=0, index_col=0)
         features_network = pd.read_csv("features_network", header=None, index_col=0)
-        features_pagerank = pd.read_csv("features_pagerank", header=None, index_col=0)
-        test_features_node = pd.read_csv("test_features_node", header=None, index_col=0)
+        features_pagerank = pd.read_csv("features_pagerank", header=0, index_col=0)
+        test_features_node = pd.read_csv("test_features_node", header=0, index_col=0)
         test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
-        test_features_pagerank = pd.read_csv("test_features_pagerank", header=None, index_col=0)
+        test_features_pagerank = pd.read_csv("test_features_pagerank", header=0, index_col=0)
+
+    features_network[np.isnan(features_network)] = 0
+    test_features_network[np.isnan(test_features_network)] = 0
 
     training_features = pd.concat([features_node, features_network, features_pagerank], axis=1)
     training_index = training_features.index
@@ -379,7 +382,7 @@ if __name__ == '__main__':
     # test
     ans = model.predict(X_test)
 
-    if not SUBMIT:
+    if SUBMIT:
         predict = pd.read_csv(PREDICT, sep=",")
         predict["prediction"] = ans
         predict.to_csv("prediction", index=False)

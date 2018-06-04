@@ -43,6 +43,7 @@ def add_author_citation_edge(ids):
                     graph_author.add_edges([(id_graphid_author[from_a], id_graphid_author[to_a])])
     return 0
 
+print("Calculating the feature")
 t0 = time.clock()
 data.data_train_positive[["id_source", "id_target"]].apply(add_author_citation_edge, axis=1)
 print(time.clock() - t0)
