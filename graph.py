@@ -20,7 +20,7 @@ for key, value in data.node_dict.items():
 print(len(authors_list))
 
 authors_list = list(set(authors_list))
-authors_list = authors_list[2:len(authors_list)]
+authors_list.remove('')
 
 print(len(authors_list))
 
@@ -32,7 +32,8 @@ for i in range(graph_author.vcount()):
     id_graphid_author[graph_author.vs["name"][i]] = i
 
 
-def add_author_citation_edge(ids):
+def author_citation_edge(ids):
+    citation_list = []
     graphids = data.get_direct(ids, return_type="id")
     from_authors = data.node_dict[graphids[0]]['tkzd_author']
     to_authors = data.node_dict[graphids[1]]['tkzd_author']
@@ -40,15 +41,48 @@ def add_author_citation_edge(ids):
         for from_a in from_authors:
             for to_a in to_authors:
                 if from_a != '' and to_a != '':
-                    graph_author.add_edges([(id_graphid_author[from_a], id_graphid_author[to_a])])
-    return 0
+                    citation_list.append((id_graphid_author[from_a], id_graphid_author[to_a]))
+        return citation_list
+    else:
+        return np.nan
+
+
+
 
 print("Calculating the feature")
 t0 = time.clock()
-data.data_train_positive[["id_source", "id_target"]].apply(add_author_citation_edge, axis=1)
+author_citation_edges = data.data_train_positive[["id_source", "id_target"]].apply(author_citation_edge, axis=1)
+print(time.clock() - t0)
+list_citation_edges = author_citation_edges.tolist()
+list_citation_edges = [x for x in list_citation_edges if str(x) != "nan"]
+list_citation_edges = [y for x in list_citation_edges for y in x]
+
+graph_author.add_edges(list_citation_edges)
+
+t0 = time.clock()
+modified_data_train = pd.concat([pd.DataFrame([{"id_source":201080, "id_target":9905149}]), data.data_train[["id_source", "id_target"]]])    # TODO: need automation
+training_citation_edges = modified_data_train.apply(author_citation_edge, axis=1)
+training_citation_edges = training_citation_edges.iloc[1:]
 print(time.clock() - t0)
 
-graph_author.write_picklez(fname="graph_author")
+def AciteB(edge):
+    neighbors = graph_author.neighbors(graph_author.vs[edge[0]], mode="OUT")    # get neighbors of from_author
+    length = neighbors.count(edge[1])
+    return(length)
+
+def meanAciteB(input_list):
+    # input)list: e.g. [(123,456), (234,252)]
+    if str(input_list) != "nan":
+        acitebs = map(AciteB, input_list)
+        return np.mean(acitebs)
+
+t0 = time.clock()
+feature_meanAciteB = training_citation_edges.apply(meanAciteB, axis=1)
+print(time.clock() - t0)
+feature_meanAciteB[data.data_train["predict"]==1] -= 1
+
+#
+# graph_author.write_picklez(fname="graph_author")
 # Read_Pickle(klass, fname=None)
 
 

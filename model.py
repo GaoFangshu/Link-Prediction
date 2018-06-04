@@ -65,7 +65,7 @@ class Data():
     def sample(self, prop, load = False):
         # to test code we select sample
         if load:
-            features_node = pd.read_csv("features_node", header=None, index_col=0)
+            features_node = pd.read_csv("features_node", header=0, index_col=0)
             features_index = features_node.index
             self.data_train = self.data_train.ix[features_index]
             self.data_train_positive = self.data_train[self.data_train["predict"] == 1]
@@ -379,6 +379,10 @@ if __name__ == '__main__':
     model = xgb.XGBClassifier(max_depth=5, learning_rate=0.1, n_estimators=160, silent=True, objective="binary:logistic")
     model.fit(X_train, y_train)
 
+    # show importance
+    plot_importance(model)
+    plt.show()
+
     # test
     ans = model.predict(X_test)
 
@@ -390,7 +394,3 @@ if __name__ == '__main__':
         # calculate f1
         f1 = f1_score(ans, y_test)
         print("F1 Accuracy: %.2f" % f1)
-
-        # show importance
-        plot_importance(model)
-        plt.show()
