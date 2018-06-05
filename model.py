@@ -28,6 +28,7 @@ RUN_FOR_FIRST_TIME = False
 SUBMIT = True
 LOAD_SAMPLE = True
 TUNING = True
+TUNING_PARMS = "max_depth & min_child_weight"
 
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
@@ -495,11 +496,18 @@ if __name__ == '__main__':
         X_train, X_test, y_train, y_test = train_test_split(training_features, labels_array, test_size=0.2, random_state=0)
 
     if TUNING:
-        cv_params = {'n_estimators': [50, 100, 150, 200, 300]}
-        other_params = {'learning_rate': 0.1, 'n_estimators': 150, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
-                        'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1}
+        if TUNING_PARMS == "n_estimators":
+            cv_params = {'n_estimators': [175, 200, 225, 250, 275]}    # 225 or 250
+            other_params = {'learning_rate': 0.1, 'n_estimators': 150, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
+                            'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1,
+                            'objective': "binary:logistic"}
+        if TUNING_PARMS == "max_depth & min_child_weight":
+            cv_params = {'max_depth': [2, 3, 4, 5, 6, 7, 8, 9], 'min_child_weight': [1, 2, 3, 4, 5, 6]}
+            other_params = {'learning_rate': 0.1, 'n_estimators': 225, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
+                            'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1,
+                            'objective': "binary:logistic"}
 
-        model = xgb.XGBRegressor(**other_params)
+        model = xgb.XGBClassifier(**other_params)
         optimized_GBM = GridSearchCV(estimator=model, param_grid=cv_params, scoring='f1', cv=5, verbose=1, n_jobs=-1)
         optimized_GBM.fit(X_train, y_train)
         evalute_result = optimized_GBM.grid_scores_
