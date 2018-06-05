@@ -39,6 +39,8 @@
 - [ ] a是否引用b，如果a有很多短路径能到b的话，则可能性高，但越长可能也就难引用了（也不一定，如果b经典文献）。总之Katz Index可以一试。
 - [ ] 训练集的0表示没有关系，这与未知不是一个概念，需要在graph中体现吗
 - [ ] WordNet计算title相似度
+- [ ] journal network
+- [x] MeanAciteB
 
 
 reference

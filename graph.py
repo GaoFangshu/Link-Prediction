@@ -11,30 +11,28 @@ data.sample(prop=1, load=True)
 data.prepare_data(delete=False)
 data.data_node_info = data.data_node_info[['id', 'year', 'title', 'author', 'tkzd_author']]
 
-authors_list = []
+def get_authors_list():
+    authors_list = []
 
-for key, value in data.node_dict.items():
-    if type(value['tkzd_author']) == list:
-        authors_list.extend(value['tkzd_author'])
+    for key, value in data.node_dict.items():
+        if type(value['tkzd_author']) == list:
+            authors_list.extend(value['tkzd_author'])
 
-print(len(authors_list))
+    authors_list = list(set(authors_list))
+    authors_list.remove('')
+    return authors_list
 
-authors_list = list(set(authors_list))
-authors_list.remove('')
+def init_graph_author():
+    authors_list = get_authors_list()
+    graph_author.add_vertices(authors_list)
 
-print(len(authors_list))
-
-graph_author = igraph.Graph(directed=True)
-graph_author.add_vertices(authors_list)
-
-id_graphid_author = {}
-for i in range(graph_author.vcount()):
-    id_graphid_author[graph_author.vs["name"][i]] = i
+    for i in range(graph_author.vcount()):
+        id_graphid_author[graph_author.vs["name"][i]] = i
 
 
 def author_citation_edge(ids):
     citation_list = []
-    graphids = data.get_direct(ids, return_type="id")
+    graphids = data.get_direct(ids, graphtype="author", return_type="id")
     from_authors = data.node_dict[graphids[0]]['tkzd_author']
     to_authors = data.node_dict[graphids[1]]['tkzd_author']
     if type(from_authors)==list and type(to_authors)==list:
@@ -72,14 +70,29 @@ def AciteB(edge):
 
 def meanAciteB(input_list):
     # input)list: e.g. [(123,456), (234,252)]
-    if str(input_list) != "nan":
-        acitebs = map(AciteB, input_list)
+    if type(input_list) == list:
+        acitebs = list(map(AciteB, input_list))
         return np.mean(acitebs)
+    else:
+        return 0
 
 t0 = time.clock()
-feature_meanAciteB = training_citation_edges.apply(meanAciteB, axis=1)
+feature_meanAciteB = training_citation_edges.apply(meanAciteB)
 print(time.clock() - t0)
 feature_meanAciteB[data.data_train["predict"]==1] -= 1
+feature_meanAciteB[feature_meanAciteB==-1] = 0
+
+t0 = time.clock()
+modified_data_test = pd.concat([pd.DataFrame([{"id_source":9912290, "id_target":7120}]), data.data_test[["id_source", "id_target"]]])    # TODO: need automation
+testing_citation_edges = modified_data_test.apply(author_citation_edge, axis=1)
+testing_citation_edges = testing_citation_edges.iloc[1:]
+print(time.clock() - t0)
+
+t0 = time.clock()
+test_feature_meanAciteB = testing_citation_edges.apply(meanAciteB)
+print(time.clock() - t0)
+
+
 
 #
 # graph_author.write_picklez(fname="graph_author")

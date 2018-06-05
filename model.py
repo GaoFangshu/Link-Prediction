@@ -3,21 +3,17 @@
 @brief: prepare data and features
 """
 
-import csv
 import random
 import numpy as np
 import pandas as pd
 import nltk
-import sys
 import time
 import re
 import igraph
-from sklearn import svm
 from sklearn import preprocessing
-from sklearn.cross_validation import KFold
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import f1_score
-from utils import ngram_utils, dist_utils, np_utils
+from utils import dist_utils
 import xgboost as xgb
 from xgboost import plot_importance
 from matplotlib import pyplot as plt
@@ -31,6 +27,7 @@ PREDICT = "randomprediction.csv"
 RUN_FOR_FIRST_TIME = False
 SUBMIT = True
 LOAD_SAMPLE = True
+TUNING = True
 
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
@@ -60,7 +57,8 @@ class Data():
         # graph
         self.graph_paper = igraph.Graph(directed=True)
         self.id_graphid_paper = {}
-
+        self.graph_author = igraph.Graph(directed=True)
+        self.id_graphid_author = {}
 
     def sample(self, prop, load = False):
         # to test code we select sample
@@ -88,12 +86,66 @@ class Data():
             print("getting network features")
             features_network = batch_data[["id_source", "id_target"]].apply(self.get_graph_simi, axis=1)
             return features_network
-        if get_item == "page_rank":
-            self.pagerank = self.graph_paper.pagerank()
+        if get_item == "pagerank_paper":
+            self.pagerank_paper = self.graph_paper.pagerank()
             features_pagerank_from = batch_data[["id_source", "id_target"]].apply(self.get_pagerank, args=("from",), axis=1)
             features_pagerank_to = batch_data[["id_source", "id_target"]].apply(self.get_pagerank, args=("to",), axis=1)
-            features_pagerank = pd.concat([features_pagerank_from, features_pagerank_to], axis=1)
-            return features_pagerank
+            features_pagerank_paper = pd.concat([features_pagerank_from, features_pagerank_to], axis=1)
+            return features_pagerank_paper
+        if get_item == "mean_aciteb":
+            if data_set == "train":
+                modified_data = pd.concat([pd.DataFrame([{"id_source": 201080, "id_target": 9905149}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
+            if data_set == "test":
+                modified_data = pd.concat([pd.DataFrame([{"id_source": 9912290, "id_target": 7120}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
+            citation_edges = modified_data.apply(self.author_citation_edge, axis=1)
+            citation_edges = citation_edges.iloc[1:]
+            features_meanAciteB = citation_edges.apply(self.meanAciteB)
+            if data_set == "train":
+                features_meanAciteB[batch_data["predict"] == 1] -= 1
+                features_meanAciteB[features_meanAciteB == -1] = 0
+                return features_meanAciteB
+            if data_set == "test":
+                return features_meanAciteB
+        if get_item == "pagerank_author":
+            self.pagerank_author = self.graph_author.pagerank()    # ids are vertice ids in graph_author
+            if data_set == "train":
+                modified_data = pd.concat([pd.DataFrame([{"id_source": 201080, "id_target": 9905149}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
+            if data_set == "test":
+                modified_data = pd.concat([pd.DataFrame([{"id_source": 9912290, "id_target": 7120}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
+            citation_edges = modified_data.apply(self.author_citation_edge, axis=1)
+            citation_edges = citation_edges.iloc[1:]
+
+            features_author_pagerank_mean_from = citation_edges.apply(self.apply_pagerank, args=("mean_from",))
+            features_author_pagerank_mean_to = citation_edges.apply(self.apply_pagerank, args=("mean_to",))
+            features_author_pagerank_max_from = citation_edges.apply(self.apply_pagerank, args=("max_from",))
+            features_author_pagerank_max_to = citation_edges.apply(self.apply_pagerank, args=("max_to",))
+
+            features_pagerank_author = pd.concat([features_author_pagerank_mean_from, features_author_pagerank_mean_to, features_author_pagerank_max_from, features_author_pagerank_max_to], axis=1)
+            return features_pagerank_author
+
+    def apply_pagerank(self, input_list, pageranktype):
+        # input)list: e.g. [(123,456), (234,252)]
+        if type(input_list) == list:
+            if pageranktype == "mean_from":
+                author_pagerank_from = list(map(self.lookup_author_pagerank_from, input_list))
+                return np.mean(author_pagerank_from)
+            if pageranktype == "mean_to":
+                author_pagerank_from = list(map(self.lookup_author_pagerank_to, input_list))
+                return np.mean(author_pagerank_from)
+            if pageranktype == "max_from":
+                author_pagerank_from = list(map(self.lookup_author_pagerank_from, input_list))
+                return np.max(author_pagerank_from)
+            if pageranktype == "max_to":
+                author_pagerank_from = list(map(self.lookup_author_pagerank_to, input_list))
+                return np.max(author_pagerank_from)
+        else:
+            return 0
+
+    def lookup_author_pagerank_from(self, edge):
+        return self.pagerank_author[edge[0]]
+
+    def lookup_author_pagerank_to(self, edge):
+        return self.pagerank_author[edge[1]]
 
     def lookup_graph_id(self, ids):
         # ids is from data.data_train[["id_source", "id_target"]].apply(..., axis=1)
@@ -118,9 +170,9 @@ class Data():
         # self.pagerank = self.graph.pagerank() before doing this
         graphid_from, graphid_to = self.lookup_graph_id(ids)
         if direct == "from":
-            return self.pagerank[graphid_from]
+            return self.pagerank_paper[graphid_from]
         if direct == "to":
-            return self.pagerank[graphid_to]
+            return self.pagerank_paper[graphid_to]
 
     def get_features(self, ids):
         # ids = [source_id, target_id]
@@ -206,7 +258,7 @@ class Data():
         self.data_test = pd.read_csv(DIR_TEST, names=["id_source", "id_target"], header=None, sep=" ")
         self.data_node_info = pd.read_csv(DIR_NODEINFO, names=["id", "year", "title", "author", "journal", "abstract"], header=None)
 
-    def init_graph(self):
+    def init_graph_paper(self):
         # run after `prepare_data`, need self.node_dict
         self.graph_paper.add_vertices(list(self.node_dict.keys()))
 
@@ -316,6 +368,59 @@ class Data():
         # TODO: delete or not?
         pass
 
+    def get_authors_list(self):
+        authors_list = []
+
+        for key, value in self.node_dict.items():
+            if type(value['tkzd_author']) == list:
+                authors_list.extend(value['tkzd_author'])
+
+        authors_list = list(set(authors_list))
+        authors_list.remove('')
+        return authors_list
+
+    def init_graph_author(self):
+        authors_list = self.get_authors_list()
+        self.graph_author.add_vertices(authors_list)
+        # add author vertice
+        for i in range(self.graph_author.vcount()):
+            self.id_graphid_author[self.graph_author.vs["name"][i]] = i
+        # add citation edges
+        author_citation_edges = self.data_train_positive[["id_source", "id_target"]].apply(self.author_citation_edge, axis=1)
+        list_citation_edges = author_citation_edges.tolist()
+        list_citation_edges = [x for x in list_citation_edges if str(x) != "nan"]
+        list_citation_edges = [y for x in list_citation_edges for y in x]
+
+        self.graph_author.add_edges(list_citation_edges)
+
+
+    def author_citation_edge(self, ids):
+        citation_list = []
+        graphids = self.get_direct(ids, return_type="id")
+        from_authors = self.node_dict[graphids[0]]['tkzd_author']
+        to_authors = self.node_dict[graphids[1]]['tkzd_author']
+        if type(from_authors) == list and type(to_authors) == list:
+            for from_a in from_authors:
+                for to_a in to_authors:
+                    if from_a != '' and to_a != '':
+                        citation_list.append((self.id_graphid_author[from_a], self.id_graphid_author[to_a]))
+            return citation_list
+        else:
+            return np.nan
+
+    def AciteB(self, edge):
+        neighbors = self.graph_author.neighbors(self.graph_author.vs[edge[0]], mode="OUT")  # get neighbors of from_author
+        length = neighbors.count(edge[1])
+        return (length)
+
+    def meanAciteB(self, input_list):
+        # input)list: e.g. [(123,456), (234,252)]
+        if type(input_list) == list:
+            acitebs = list(map(self.AciteB, input_list))
+            return np.mean(acitebs)
+        else:
+            return 0
+
 
 if __name__ == '__main__':
     data = Data(sample=True)
@@ -325,41 +430,55 @@ if __name__ == '__main__':
 
     data.get_node_dict()
     data.prepare_data()
-    data.init_graph()
+    data.init_graph_paper()
+    data.init_graph_author()
 
     if RUN_FOR_FIRST_TIME:
         t0 = time.clock()
         features_node = data.get_batch(0, data.data_train.shape[0], "train", get_item="node")
         features_network = data.get_batch(0, data.data_train.shape[0], "train", get_item="network_jaccard")
-        features_pagerank = data.get_batch(0, data.data_train.shape[0], "train", get_item="page_rank")
+        features_pagerank_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_paper")
+        features_meanAciteB = data.get_batch(0, data.data_train.shape[0], "train", get_item="mean_aciteb")
+        features_pagerank_author = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_author")
         print(time.clock() - t0)
 
         features_node.to_csv("features_node")
         features_network.to_csv("features_network")
-        features_pagerank.to_csv("features_pagerank")
+        features_pagerank_paper.to_csv("features_pagerank_paper")
+        features_meanAciteB.to_csv("features_meanAciteB")
+        features_pagerank_author.to_csv("features_pagerank_author")
 
         t0 = time.clock()
         test_features_node = data.get_batch(0, data.data_test.shape[0], "test", get_item="node")
         test_features_network = data.get_batch(0, data.data_test.shape[0], "test", get_item="network_jaccard")
-        test_features_pagerank = data.get_batch(0, data.data_test.shape[0], "test", get_item="page_rank")
+        test_features_pagerank_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_paper")
+        test_features_meanAciteB = data.get_batch(0, data.data_test.shape[0], "test", get_item="mean_aciteb")
+        test_features_pagerank_author = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_author")
         print(time.clock() - t0)
 
         test_features_node.to_csv("test_features_node")
         test_features_network.to_csv("test_features_network")
-        test_features_pagerank.to_csv("test_features_pagerank")
+        test_features_pagerank_paper.to_csv("test_features_pagerank_paper")
+        test_features_meanAciteB.to_csv("test_features_meanAciteB")
+        test_features_pagerank_author.to_csv("test_features_pagerank_author")
 
     else:
         features_node = pd.read_csv("features_node", header=0, index_col=0)
         features_network = pd.read_csv("features_network", header=None, index_col=0)
-        features_pagerank = pd.read_csv("features_pagerank", header=0, index_col=0)
+        features_pagerank_paper = pd.read_csv("features_pagerank_paper", header=0, index_col=0)
+        features_meanAciteB = pd.read_csv("features_meanAciteB", header=None, index_col=0)
+        features_pagerank_author = pd.read_csv("features_pagerank_author", header=0, index_col=0)
+
         test_features_node = pd.read_csv("test_features_node", header=0, index_col=0)
         test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
-        test_features_pagerank = pd.read_csv("test_features_pagerank", header=0, index_col=0)
+        test_features_pagerank_paper = pd.read_csv("test_features_pagerank_paper", header=0, index_col=0)
+        test_features_meanAciteB = pd.read_csv("test_features_meanAciteB", header=None, index_col=0)
+        test_features_pagerank_author = pd.read_csv("test_features_pagerank_author", header=0, index_col=0)
 
     features_network[np.isnan(features_network)] = 0
     test_features_network[np.isnan(test_features_network)] = 0
 
-    training_features = pd.concat([features_node, features_network, features_pagerank], axis=1)
+    training_features = pd.concat([features_node, features_network, features_pagerank_paper, features_meanAciteB, features_pagerank_author], axis=1)
     training_index = training_features.index
     # scale
     training_features = preprocessing.scale(training_features)
@@ -369,28 +488,44 @@ if __name__ == '__main__':
         X_train = training_features
         y_train = labels_array
 
-        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank], axis=1)
+        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author], axis=1)
         testing_features = preprocessing.scale(testing_features)
         X_test = testing_features
     else:
         X_train, X_test, y_train, y_test = train_test_split(training_features, labels_array, test_size=0.2, random_state=0)
 
-    # train model
-    model = xgb.XGBClassifier(max_depth=5, learning_rate=0.1, n_estimators=160, silent=True, objective="binary:logistic")
-    model.fit(X_train, y_train)
+    if TUNING:
+        cv_params = {'n_estimators': [50, 100, 150, 200, 300]}
+        other_params = {'learning_rate': 0.1, 'n_estimators': 150, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
+                        'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1}
 
-    # show importance
-    plot_importance(model)
-    plt.show()
-
-    # test
-    ans = model.predict(X_test)
-
-    if SUBMIT:
-        predict = pd.read_csv(PREDICT, sep=",")
-        predict["prediction"] = ans
-        predict.to_csv("prediction", index=False)
+        model = xgb.XGBRegressor(**other_params)
+        optimized_GBM = GridSearchCV(estimator=model, param_grid=cv_params, scoring='f1', cv=5, verbose=1, n_jobs=-1)
+        optimized_GBM.fit(X_train, y_train)
+        evalute_result = optimized_GBM.grid_scores_
+        print('evalute result:{0}'.format(evalute_result))
+        print('best params: {0}'.format(optimized_GBM.best_params_))
+        print('best score: {0}'.format(optimized_GBM.best_score_))
     else:
-        # calculate f1
-        f1 = f1_score(ans, y_test)
-        print("F1 Accuracy: %.2f" % f1)
+        # train model
+        model = xgb.XGBClassifier(max_depth=5, learning_rate=0.1, n_estimators=160, silent=True, objective="binary:logistic")
+        model.fit(X_train, y_train)
+
+        # show importance
+        plot_importance(model)
+        plt.show()
+
+        # test
+        ans = model.predict(X_test)
+
+        if SUBMIT:
+            predict = pd.read_csv(PREDICT, sep=",")
+            predict["prediction"] = ans
+            predict.to_csv("prediction", index=False)
+        else:
+            ans_train = model.predict(X_train)
+            f1_train = f1_score(ans_train, y_train)
+            print("F1 Accuracy of Training: %.5f" % f1_train)
+            # calculate f1
+            f1 = f1_score(ans, y_test)
+            print("F1 Accuracy of Testing: %.5f" % f1)
