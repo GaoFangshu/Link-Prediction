@@ -4,11 +4,21 @@ import numpy as np
 import time
 from model import Data
 import math
+PREDICT = "randomprediction.csv"
 
 prediction94453 = pd.read_csv("prediction94453", header=0, index_col=0)
 prediction94416 = pd.read_csv("prediction94416", header=0, index_col=0)
-prediction = pd.concat([prediction94453, prediction94416], axis=1)
-np.sum(prediction["prediction94453"] == prediction["prediction94416"])
+prediction94410 = pd.read_csv("prediction94410", header=0, index_col=0)
+prediction = pd.concat([prediction94453, prediction94416, prediction94410], axis=1)
+prediction[(prediction["prediction94453"] != prediction["prediction94416"]) + (prediction["prediction94453"] != prediction["prediction94410"]) + (prediction["prediction94416"] != prediction["prediction94410"])]
+
+ans = pd.DataFrame(np.int_(np.rint(np.mean(prediction, axis=1))))
+
+predict = pd.read_csv(PREDICT, sep=",")
+predict["prediction"] = ans
+predict.to_csv("prediction", index=False)
+pd.DataFrame(s_train).to_csv("s_train", index=True)
+pd.DataFrame(s_test).to_csv("s_test", index=True)
 
 data = Data(sample=True)
 data.load_data()
@@ -19,6 +29,25 @@ data.get_node_dict()
 data.prepare_data()
 data.init_graph_paper()
 data.init_graph_author()
+
+
+def get_year(ids, return_type="graph_id"):
+    # need self.id_graphid
+    # input: int: id1 and id2
+    # output: tuple: (from_graph_id, to_graph_id) or (from_id, to_id)
+    # year(from_id) >= year(to_id)
+
+    year_id1 = data.node_dict[ids[0]]["year"]
+    year_id2 = data.node_dict[ids[1]]["year"]
+    if return_type == "graph_id":
+        if year_id1 >= year_id2:  # TODO: how to deal with papers in same year, I ignore it now
+            return year_id1-year_id2
+        else:
+            return year_id1-year_id1
+
+dyear = data.data_train_positive[["id_source", "id_target"]].apply(get_year, axis=1)
+
+dyear.value_counts()
 
 # matrix = data.graph_paper.similarity_inverse_log_weighted(mode="ALL")
 

@@ -29,12 +29,12 @@ DIR_TEST = "social_test.txt"
 DIR_NODEINFO = "node_information.csv"
 PREDICT = "randomprediction.csv"
 
-RUN_FOR_FIRST_TIME = False
-SUBMIT = True
+RUN_FOR_FIRST_TIME = True
+SUBMIT = False
 LOAD_SAMPLE = True
 TUNING = False
 TUNING_PARMS = "max_depth & min_child_weight"
-ENSEMBLE = True
+ENSEMBLE = False
 
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
@@ -106,13 +106,52 @@ class Data():
                 modified_data = pd.concat([pd.DataFrame([{"id_source": 9912290, "id_target": 7120}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
             citation_edges = modified_data.apply(self.author_citation_edge, axis=1)
             citation_edges = citation_edges.iloc[1:]
-            features_meanAciteB = citation_edges.apply(self.meanAciteB)
+
+            features_AciteB = citation_edges.apply(self.meanAciteB)
+            features_meanAciteB = features_AciteB.apply(lambda x: x[0])
+            features_maxAciteB = features_AciteB.apply(lambda x: x[1])
+            features_sumAciteB = features_AciteB.apply(lambda x: x[2])
+
+            features_BciteA = citation_edges.apply(self.meanBciteA)
+            features_meanBciteA = features_BciteA.apply(lambda x: x[0])
+            features_maxBciteA = features_BciteA.apply(lambda x: x[1])
+            features_sumBciteA = features_BciteA.apply(lambda x: x[2])
+
+            features_AciteB_all = citation_edges.apply(self.meanAciteB, args=("all",))
+            features_meanAciteB_all = features_AciteB_all.apply(lambda x: x[0])
+            features_maxAciteB_all = features_AciteB_all.apply(lambda x: x[1])
+            features_sumAciteB_all = features_AciteB_all.apply(lambda x: x[2])
+
             if data_set == "train":
                 features_meanAciteB[batch_data["predict"] == 1] -= 1
                 features_meanAciteB[features_meanAciteB == -1] = 0
-                return features_meanAciteB
+                features_meanBciteA[batch_data["predict"] == 1] -= 1
+                features_meanBciteA[features_meanBciteA == -1] = 0
+
+                features_maxAciteB[batch_data["predict"] == 1] -= 1
+                features_maxAciteB[features_maxAciteB == -1] = 0
+                features_maxBciteA[batch_data["predict"] == 1] -= 1
+                features_maxBciteA[features_maxBciteA == -1] = 0
+
+                features_meanAciteB_all[batch_data["predict"] == 1] -= 1
+                features_meanAciteB_all[features_meanAciteB_all == -1] = 0
+                features_maxAciteB_all[batch_data["predict"] == 1] -= 1
+                features_maxAciteB_all[features_maxAciteB_all == -1] = 0
+
+                features_maxmeancite = np.max(pd.concat([features_meanAciteB, features_meanBciteA], axis=1), axis=1)
+                features_maxmaxcite = np.max(pd.concat([features_maxAciteB, features_maxBciteA], axis=1), axis=1)
+                features_maxsumcite = np.max(pd.concat([features_sumAciteB, features_sumBciteA], axis=1), axis=1)
+
+                return pd.concat([features_meanAciteB, features_maxAciteB, features_sumAciteB, features_meanBciteA, features_maxBciteA, features_sumBciteA, features_maxmeancite, features_maxmaxcite, features_maxsumcite, features_meanAciteB_all, features_maxAciteB_all, features_sumAciteB_all], axis=1)
             elif data_set == "test":
-                return features_meanAciteB
+
+                features_maxmeancite = np.max(pd.concat([features_meanAciteB, features_meanBciteA], axis=1), axis=1)
+                features_maxmaxcite = np.max(pd.concat([features_maxAciteB, features_maxBciteA], axis=1), axis=1)
+                features_maxsumcite = np.max(pd.concat([features_sumAciteB, features_sumBciteA], axis=1), axis=1)
+
+                return pd.concat([features_meanAciteB, features_maxAciteB, features_sumAciteB, features_meanBciteA, features_maxBciteA, features_sumBciteA, features_maxmeancite, features_maxmaxcite, features_maxsumcite, features_meanAciteB_all, features_maxAciteB_all, features_sumAciteB_all], axis=1)
+
+
         elif get_item == "pagerank_author":
             self.pagerank_author = self.graph_author.pagerank()    # ids are vertice ids in graph_author
             if data_set == "train":
@@ -132,6 +171,21 @@ class Data():
         elif get_item == "adamic_adar_paper":
             features_adamic_adar_paper = batch_data[["id_source", "id_target"]].apply(self.similarity, args=(self.graph_paper,), axis=1)
             return features_adamic_adar_paper
+        elif get_item == "dyear":
+            features_dyear = batch_data[["id_source", "id_target"]].apply(self.get_year, axis=1)
+            return features_dyear
+
+    def get_year(self, ids, return_type="graph_id"):
+        # need self.id_graphid
+        # input: int: id1 and id2
+
+        year_id1 = self.node_dict[ids[0]]["year"]
+        year_id2 = self.node_dict[ids[1]]["year"]
+        if return_type == "graph_id":
+            if year_id1 >= year_id2:  # TODO: how to deal with papers in same year, I ignore it now
+                return year_id1 - year_id2
+            else:
+                return year_id1 - year_id1
 
     def similarity(self, ids, graph, method="adamic_adar", direct=False):
         if direct:
@@ -429,17 +483,42 @@ class Data():
             return np.nan
 
     def AciteB(self, edge):
-        neighbors = self.graph_author.neighbors(self.graph_author.vs[edge[0]], mode="OUT")  # get neighbors of from_author
-        length = neighbors.count(edge[1])
+        neighbors = self.graph_author.neighbors(self.graph_author.vs[edge[0]], mode="OUT")    # get citaion of from_author
+        length = neighbors.count(edge[1])    # how many times did from_author cite to_author
         return (length)
 
-    def meanAciteB(self, input_list):
-        # input)list: e.g. [(123,456), (234,252)]
+    def AciteB_all(self, edge):
+        neighbors = self.graph_author.neighbors(self.graph_author.vs[edge[0]], mode="ALL")    # get neighbots of from_author
+        length = neighbors.count(edge[1])    # how many times did from_author cite to_author
+        return (length)
+
+    def BciteA(self, edge):
+        neighbors = self.graph_author.neighbors(self.graph_author.vs[edge[1]], mode="OUT")  # get citaion of to_author
+        length = neighbors.count(edge[1])    # how many times did to_author cite  rom_author
+        return (length)
+
+    def meanAciteB(self, input_list, mode="out"):
+        # input_list: e.g. [(123,456), (234,252)]
+        if mode == "out":
+            if type(input_list) == list:
+                acitebs = list(map(self.AciteB, input_list))
+                return [np.mean(acitebs), np.max(acitebs), np.sum(acitebs)]
+            else:
+                return [0, 0, 0]
+        elif mode == "all":
+            if type(input_list) == list:
+                acitebs = list(map(self.AciteB_all, input_list))
+                return [np.mean(acitebs), np.max(acitebs), np.sum(acitebs)]
+            else:
+                return [0, 0, 0]
+
+    def meanBciteA(self, input_list):
+        # input_list: e.g. [(123,456), (234,252)]
         if type(input_list) == list:
-            acitebs = list(map(self.AciteB, input_list))
-            return np.mean(acitebs)
+            bciteas = list(map(self.BciteA, input_list))
+            return [np.mean(bciteas), np.max(bciteas), np.sum(bciteas)]
         else:
-            return 0
+            return [0, 0, 0]
 
 class Ensemble(object):
     def __init__(self, n_folds, stacker, base_models):
@@ -448,9 +527,9 @@ class Ensemble(object):
         self.base_models = base_models
 
     def fit_predict(self, X, y, T):
-        # X = np.array(X)
-        # y = np.array(y)
-        # T = np.array(T)
+        X = np.array(X)
+        y = np.array(y)
+        T = np.array(T)
 
         folds = list(KFold(len(y), n_folds=self.n_folds, shuffle=True, random_state=7))
 
@@ -472,13 +551,15 @@ class Ensemble(object):
                 S_train[test_idx, i] = y_pred
                 S_test_i[:, j] = clf.predict(T)[:]
 
-                ans_train = clf.predict(X_train)
-                f1_train = f1_score(ans_train, y_train)
-                print("    F1 accuracy of X_train: %.5f" % f1_train)
-                f1 = f1_score(y_pred, y_train[test_idx])
-                print("    F1 accuracy of X_holdout: %.5f" % f1)
-
+                # ans_train = clf.predict(X_train)
+                # f1_train = f1_score(ans_train, y_train)
+                # print("    F1 accuracy of X_train: %.5f" % f1_train)
+                # f1 = f1_score(y_pred, y_holdout)
+                # print("    F1 accuracy of X_holdout: %.5f" % f1)
+                print("    mean of fold prediction: ", np.mean(S_train[test_idx, i], axis=0))
                 print("    time for this fold: %.2f sec" % (time.clock() - t0))
+
+            print("mean of model prediction: ", np.mean(S_train[:, i], axis=0))
 
             S_test[:, i] = S_test_i.mean(1)
 
@@ -502,36 +583,44 @@ if __name__ == '__main__':
         data.init_graph_author()
 
         t0 = time.clock()
-        features_node = data.get_batch(0, data.data_train.shape[0], "train", get_item="node")
-        features_network = data.get_batch(0, data.data_train.shape[0], "train", get_item="network_jaccard")
-        features_pagerank_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_paper")
-        features_meanAciteB = data.get_batch(0, data.data_train.shape[0], "train", get_item="mean_aciteb")
-        features_pagerank_author = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_author")
-        features_adamic_adar_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="adamic_adar_paper")
+        # features_node = data.get_batch(0, data.data_train.shape[0], "train", get_item="node")    # 14 columns
+        # features_network = data.get_batch(0, data.data_train.shape[0], "train", get_item="network_jaccard")    # 1 columns
+        # features_pagerank_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_paper")    # 2 columns
+        features_meanAciteB = data.get_batch(0, data.data_train.shape[0], "train", get_item="mean_aciteb")    # 9 columns
+        # features_pagerank_author = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_author")    # 2 columns
+        # features_pagerank_author_max = np.max(features_pagerank_author, axis=1)
+        # features_adamic_adar_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="adamic_adar_paper")    # 1 columns
+        # features_dyear = data.get_batch(0, data.data_train.shape[0], "train", get_item="dyear")
         print(time.clock() - t0)
 
-        features_node.to_csv("features_node")
-        features_network.to_csv("features_network")
-        features_pagerank_paper.to_csv("features_pagerank_paper")
+        # features_node.to_csv("features_node")
+        # features_network.to_csv("features_network")
+        # features_pagerank_paper.to_csv("features_pagerank_paper")
         features_meanAciteB.to_csv("features_meanAciteB")
-        features_pagerank_author.to_csv("features_pagerank_author")
-        features_adamic_adar_paper.to_csv("features_adamic_adar_paper")
+        # features_pagerank_author.to_csv("features_pagerank_author")
+        # features_pagerank_author_max.to_csv("features_pagerank_author_max")
+        # features_adamic_adar_paper.to_csv("features_adamic_adar_paper")
+        # features_dyear.to_csv("features_dyear")
 
         t0 = time.clock()
-        test_features_node = data.get_batch(0, data.data_test.shape[0], "test", get_item="node")
-        test_features_network = data.get_batch(0, data.data_test.shape[0], "test", get_item="network_jaccard")
-        test_features_pagerank_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_paper")
+        # test_features_node = data.get_batch(0, data.data_test.shape[0], "test", get_item="node")
+        # test_features_network = data.get_batch(0, data.data_test.shape[0], "test", get_item="network_jaccard")
+        # test_features_pagerank_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_paper")
         test_features_meanAciteB = data.get_batch(0, data.data_test.shape[0], "test", get_item="mean_aciteb")
-        test_features_pagerank_author = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_author")
-        test_features_adamic_adar_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="adamic_adar_paper")
+        # test_features_pagerank_author = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_author")
+        # test_features_pagerank_author_max = np.max(test_features_pagerank_author, axis=1)
+        # test_features_adamic_adar_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="adamic_adar_paper")
+        # test_features_dyear = data.get_batch(0, data.data_test.shape[0], "test", get_item="dyear")
         print(time.clock() - t0)
 
-        test_features_node.to_csv("test_features_node")
-        test_features_network.to_csv("test_features_network")
-        test_features_pagerank_paper.to_csv("test_features_pagerank_paper")
+        # test_features_node.to_csv("test_features_node")
+        # test_features_network.to_csv("test_features_network")
+        # test_features_pagerank_paper.to_csv("test_features_pagerank_paper")
         test_features_meanAciteB.to_csv("test_features_meanAciteB")
-        test_features_pagerank_author.to_csv("test_features_pagerank_author")
-        test_features_adamic_adar_paper.to_csv("test_features_adamic_adar_paper")
+        # test_features_pagerank_author.to_csv("test_features_pagerank_author")
+        # test_features_pagerank_author_max.to_csv("test_features_pagerank_author_max")
+        # test_features_adamic_adar_paper.to_csv("test_features_adamic_adar_paper")
+        # test_features_dyear.to_csv("test_features_dyear")
 
     else:
         t0 = time.clock()
@@ -563,7 +652,7 @@ if __name__ == '__main__':
                                     subsample=0.8, colsample_bytree=0.8, gamma=0, reg_alpha=0, reg_lambda=1,
                                     objective="binary:logistic", silent=True, random_state=1, n_jobs=-1)
 
-    basemodel_2 = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=2)
+    basemodel_2 = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=3, random_state=2)
     basemodel_3 = RandomForestClassifier(n_estimators=100, max_features=5, random_state=3, n_jobs=-1)
     basemodel_4 = ExtraTreesRegressor(n_jobs=-1)
     basemodel_5 = LogisticRegression(solver="sag", n_jobs=-1)
@@ -584,6 +673,8 @@ if __name__ == '__main__':
             predict = pd.read_csv(PREDICT, sep=",")
             predict["prediction"] = ans
             predict.to_csv("prediction", index=False)
+            pd.DataFrame(s_train).to_csv("s_train", index=True)
+            pd.DataFrame(s_test).to_csv("s_test", index=True)
     else:
         if SUBMIT:
             X_train = training_features
@@ -616,13 +707,13 @@ if __name__ == '__main__':
             print('best score: {0}'.format(optimized_GBM.best_score_))
         else:
             # train model
-            model = basemodel_5
+            model = basemodel_1
 
             model.fit(X_train, y_train)
 
             # show importance
-            # plot_importance(model)
-            # plt.show()
+            plot_importance(model)
+            plt.show()
 
             # test
             ans = model.predict(X_test)
