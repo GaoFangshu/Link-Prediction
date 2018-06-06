@@ -30,11 +30,11 @@ DIR_NODEINFO = "node_information.csv"
 PREDICT = "randomprediction.csv"
 
 RUN_FOR_FIRST_TIME = False
-SUBMIT = False
+SUBMIT = True
 LOAD_SAMPLE = True
 TUNING = False
 TUNING_PARMS = "max_depth & min_child_weight"
-ENSEMBLE = False
+ENSEMBLE = True
 
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
@@ -462,7 +462,7 @@ class Ensemble(object):
 
             for j, (train_idx, test_idx) in enumerate(folds):
                 t0 = time.clock()
-                print("Training model %i, fold %i" % ((i + 1),(j+1)))
+                print("\nTraining model %i, fold %i" % ((i + 1),(j+1)))
                 X_train = X[train_idx]
                 y_train = y[train_idx]
                 X_holdout = X[test_idx]
@@ -471,11 +471,18 @@ class Ensemble(object):
                 y_pred = clf.predict(X_holdout)[:]
                 S_train[test_idx, i] = y_pred
                 S_test_i[:, j] = clf.predict(T)[:]
-                print(time.clock() - t0)
+
+                ans_train = clf.predict(X_train)
+                f1_train = f1_score(ans_train, y_train)
+                print("    F1 accuracy of X_train: %.5f" % f1_train)
+                f1 = f1_score(y_pred, y_train[test_idx])
+                print("    F1 accuracy of X_holdout: %.5f" % f1)
+
+                print("    time for this fold: %.2f sec" % (time.clock() - t0))
 
             S_test[:, i] = S_test_i.mean(1)
 
-        print("First layer finished")
+        print("\nFirst layer finished\n")
         self.stacker.fit(S_train, y)
         y_pred = self.stacker.predict(S_test)[:]
         return y_pred, S_train, S_test
@@ -566,7 +573,7 @@ if __name__ == '__main__':
         X_train = training_features
         y_train = labels_array
 
-        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB,test_features_pagerank_author, test_features_adamic_adar_paper], axis=1)
+        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author, test_features_adamic_adar_paper], axis=1)
         testing_features = preprocessing.scale(testing_features)
         X_test = testing_features
 
@@ -627,7 +634,7 @@ if __name__ == '__main__':
             else:
                 ans_train = model.predict(X_train)
                 f1_train = f1_score(ans_train, y_train)
-                print("F1 Accuracy of Training: %.5f" % f1_train)
+                print("F1 accuracy of training: %.5f" % f1_train)
                 # calculate f1
                 f1 = f1_score(ans, y_test)
-                print("F1 Accuracy of Testing: %.5f" % f1)
+                print("F1 accuracy of testing: %.5f" % f1)
