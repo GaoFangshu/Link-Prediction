@@ -3,13 +3,41 @@ import pandas as pd
 import numpy as np
 import time
 from model import Data
+import math
+
+prediction94453 = pd.read_csv("prediction94453", header=0, index_col=0)
+prediction94416 = pd.read_csv("prediction94416", header=0, index_col=0)
+prediction = pd.concat([prediction94453, prediction94416], axis=1)
+np.sum(prediction["prediction94453"] == prediction["prediction94416"])
 
 data = Data(sample=True)
 data.load_data()
+
 data.sample(prop=1, load=True)
-# data.get_node_dict()
-data.prepare_data(delete=False)
-data.data_node_info = data.data_node_info[['id', 'year', 'title', 'author', 'tkzd_author']]
+
+data.get_node_dict()
+data.prepare_data()
+data.init_graph_paper()
+data.init_graph_author()
+
+# matrix = data.graph_paper.similarity_inverse_log_weighted(mode="ALL")
+
+
+def similarity(ids, graph, method= "adamic_adar", direct=False):
+    if direct:
+        pass
+    else:
+        i = data.id_graphid_paper[ids[0]]
+        j = data.id_graphid_paper[ids[1]]
+    if method == "adamic_adar":
+		return sum([1.0/math.log(graph.degree(v)) for v in set(graph.neighbors(i)).intersection(set(graph.neighbors(j)))])
+
+t0 = time.clock()
+features_adamic_adar_paper = data.data_train[["id_source", "id_target"]].iloc[0:10000].apply(similarity, args=(data.graph_paper,),
+                                                                          axis=1)
+print(time.clock() - t0)
+similarity(data.graph_paper, i=1001, j=1002, method ="adamic_adar")
+
 
 def get_authors_list():
     authors_list = []

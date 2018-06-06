@@ -11,12 +11,17 @@ import time
 import re
 import igraph
 from sklearn import preprocessing
+from sklearn.cross_validation import KFold
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import f1_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, ExtraTreesRegressor
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
 from utils import dist_utils
 import xgboost as xgb
 from xgboost import plot_importance
 from matplotlib import pyplot as plt
+import math
 
 
 DIR_TRIAN = "social_train.txt"
@@ -25,10 +30,11 @@ DIR_NODEINFO = "node_information.csv"
 PREDICT = "randomprediction.csv"
 
 RUN_FOR_FIRST_TIME = False
-SUBMIT = True
+SUBMIT = False
 LOAD_SAMPLE = True
-TUNING = True
+TUNING = False
 TUNING_PARMS = "max_depth & min_child_weight"
+ENSEMBLE = False
 
 # nltk.download('punkt')  # for tokenization
 # nltk.download('stopwords')
@@ -77,26 +83,26 @@ class Data():
         # ids from self.data_train
         if data_set == "train":
             batch_data = self.data_train.iloc[from_iloc: to_iloc]
-        if data_set == "test":
+        elif data_set == "test":
             batch_data = self.data_test.iloc[from_iloc: to_iloc]
         if get_item == "node":
             print("getting node features")
             features_node = batch_data[["id_source","id_target"]].apply(self.get_features, axis=1)
             return features_node
-        if get_item == "network_jaccard":
+        elif get_item == "network_jaccard":
             print("getting network features")
             features_network = batch_data[["id_source", "id_target"]].apply(self.get_graph_simi, axis=1)
             return features_network
-        if get_item == "pagerank_paper":
+        elif get_item == "pagerank_paper":
             self.pagerank_paper = self.graph_paper.pagerank()
             features_pagerank_from = batch_data[["id_source", "id_target"]].apply(self.get_pagerank, args=("from",), axis=1)
             features_pagerank_to = batch_data[["id_source", "id_target"]].apply(self.get_pagerank, args=("to",), axis=1)
             features_pagerank_paper = pd.concat([features_pagerank_from, features_pagerank_to], axis=1)
             return features_pagerank_paper
-        if get_item == "mean_aciteb":
+        elif get_item == "mean_aciteb":
             if data_set == "train":
                 modified_data = pd.concat([pd.DataFrame([{"id_source": 201080, "id_target": 9905149}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
-            if data_set == "test":
+            elif data_set == "test":
                 modified_data = pd.concat([pd.DataFrame([{"id_source": 9912290, "id_target": 7120}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
             citation_edges = modified_data.apply(self.author_citation_edge, axis=1)
             citation_edges = citation_edges.iloc[1:]
@@ -105,13 +111,13 @@ class Data():
                 features_meanAciteB[batch_data["predict"] == 1] -= 1
                 features_meanAciteB[features_meanAciteB == -1] = 0
                 return features_meanAciteB
-            if data_set == "test":
+            elif data_set == "test":
                 return features_meanAciteB
-        if get_item == "pagerank_author":
+        elif get_item == "pagerank_author":
             self.pagerank_author = self.graph_author.pagerank()    # ids are vertice ids in graph_author
             if data_set == "train":
                 modified_data = pd.concat([pd.DataFrame([{"id_source": 201080, "id_target": 9905149}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
-            if data_set == "test":
+            elif data_set == "test":
                 modified_data = pd.concat([pd.DataFrame([{"id_source": 9912290, "id_target": 7120}]), batch_data[["id_source", "id_target"]]])  # TODO: need automation
             citation_edges = modified_data.apply(self.author_citation_edge, axis=1)
             citation_edges = citation_edges.iloc[1:]
@@ -123,6 +129,19 @@ class Data():
 
             features_pagerank_author = pd.concat([features_author_pagerank_mean_from, features_author_pagerank_mean_to, features_author_pagerank_max_from, features_author_pagerank_max_to], axis=1)
             return features_pagerank_author
+        elif get_item == "adamic_adar_paper":
+            features_adamic_adar_paper = batch_data[["id_source", "id_target"]].apply(self.similarity, args=(self.graph_paper,), axis=1)
+            return features_adamic_adar_paper
+
+    def similarity(self, ids, graph, method="adamic_adar", direct=False):
+        if direct:
+            pass
+        else:
+            i = self.id_graphid_paper[ids[0]]
+            j = self.id_graphid_paper[ids[1]]
+        if method == "adamic_adar":
+            return sum([1.0 / math.log(graph.degree(v)) for v in
+                        set(graph.neighbors(i)).intersection(set(graph.neighbors(j)))])
 
     def apply_pagerank(self, input_list, pageranktype):
         # input)list: e.g. [(123,456), (234,252)]
@@ -130,13 +149,13 @@ class Data():
             if pageranktype == "mean_from":
                 author_pagerank_from = list(map(self.lookup_author_pagerank_from, input_list))
                 return np.mean(author_pagerank_from)
-            if pageranktype == "mean_to":
+            elif pageranktype == "mean_to":
                 author_pagerank_from = list(map(self.lookup_author_pagerank_to, input_list))
                 return np.mean(author_pagerank_from)
-            if pageranktype == "max_from":
+            elif pageranktype == "max_from":
                 author_pagerank_from = list(map(self.lookup_author_pagerank_from, input_list))
                 return np.max(author_pagerank_from)
-            if pageranktype == "max_to":
+            elif pageranktype == "max_to":
                 author_pagerank_from = list(map(self.lookup_author_pagerank_to, input_list))
                 return np.max(author_pagerank_from)
         else:
@@ -282,7 +301,7 @@ class Data():
                 return (self.id_graphid_paper[ids[0]], self.id_graphid_paper[ids[1]])
             else:
                 return (self.id_graphid_paper[ids[1]], self.id_graphid_paper[ids[0]])
-        if return_type == "id":
+        elif return_type == "id":
             if year_id1 >= year_id2:  # TODO: how to deal with papers in same year, I ignore it now
                 return (ids[0], ids[1])
             else:
@@ -422,6 +441,45 @@ class Data():
         else:
             return 0
 
+class Ensemble(object):
+    def __init__(self, n_folds, stacker, base_models):
+        self.n_folds = n_folds
+        self.stacker = stacker
+        self.base_models = base_models
+
+    def fit_predict(self, X, y, T):
+        # X = np.array(X)
+        # y = np.array(y)
+        # T = np.array(T)
+
+        folds = list(KFold(len(y), n_folds=self.n_folds, shuffle=True, random_state=7))
+
+        S_train = np.zeros((X.shape[0], len(self.base_models)))
+        S_test = np.zeros((T.shape[0], len(self.base_models)))
+
+        for i, clf in enumerate(self.base_models):
+            S_test_i = np.zeros((T.shape[0], len(folds)))
+
+            for j, (train_idx, test_idx) in enumerate(folds):
+                t0 = time.clock()
+                print("Training model %i, fold %i" % ((i + 1),(j+1)))
+                X_train = X[train_idx]
+                y_train = y[train_idx]
+                X_holdout = X[test_idx]
+                # y_holdout = y[test_idx]
+                clf.fit(X_train, y_train)
+                y_pred = clf.predict(X_holdout)[:]
+                S_train[test_idx, i] = y_pred
+                S_test_i[:, j] = clf.predict(T)[:]
+                print(time.clock() - t0)
+
+            S_test[:, i] = S_test_i.mean(1)
+
+        print("First layer finished")
+        self.stacker.fit(S_train, y)
+        y_pred = self.stacker.predict(S_test)[:]
+        return y_pred, S_train, S_test
+
 
 if __name__ == '__main__':
     data = Data(sample=True)
@@ -429,18 +487,20 @@ if __name__ == '__main__':
 
     data.sample(prop=1, load=LOAD_SAMPLE)
 
-    data.get_node_dict()
-    data.prepare_data()
-    data.init_graph_paper()
-    data.init_graph_author()
-
     if RUN_FOR_FIRST_TIME:
+
+        data.get_node_dict()
+        data.prepare_data()
+        data.init_graph_paper()
+        data.init_graph_author()
+
         t0 = time.clock()
         features_node = data.get_batch(0, data.data_train.shape[0], "train", get_item="node")
         features_network = data.get_batch(0, data.data_train.shape[0], "train", get_item="network_jaccard")
         features_pagerank_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_paper")
         features_meanAciteB = data.get_batch(0, data.data_train.shape[0], "train", get_item="mean_aciteb")
         features_pagerank_author = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_author")
+        features_adamic_adar_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="adamic_adar_paper")
         print(time.clock() - t0)
 
         features_node.to_csv("features_node")
@@ -448,6 +508,7 @@ if __name__ == '__main__':
         features_pagerank_paper.to_csv("features_pagerank_paper")
         features_meanAciteB.to_csv("features_meanAciteB")
         features_pagerank_author.to_csv("features_pagerank_author")
+        features_adamic_adar_paper.to_csv("features_adamic_adar_paper")
 
         t0 = time.clock()
         test_features_node = data.get_batch(0, data.data_test.shape[0], "test", get_item="node")
@@ -455,6 +516,7 @@ if __name__ == '__main__':
         test_features_pagerank_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_paper")
         test_features_meanAciteB = data.get_batch(0, data.data_test.shape[0], "test", get_item="mean_aciteb")
         test_features_pagerank_author = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_author")
+        test_features_adamic_adar_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="adamic_adar_paper")
         print(time.clock() - t0)
 
         test_features_node.to_csv("test_features_node")
@@ -462,78 +524,110 @@ if __name__ == '__main__':
         test_features_pagerank_paper.to_csv("test_features_pagerank_paper")
         test_features_meanAciteB.to_csv("test_features_meanAciteB")
         test_features_pagerank_author.to_csv("test_features_pagerank_author")
+        test_features_adamic_adar_paper.to_csv("test_features_adamic_adar_paper")
 
     else:
+        t0 = time.clock()
         features_node = pd.read_csv("features_node", header=0, index_col=0)
         features_network = pd.read_csv("features_network", header=None, index_col=0)
         features_pagerank_paper = pd.read_csv("features_pagerank_paper", header=0, index_col=0)
         features_meanAciteB = pd.read_csv("features_meanAciteB", header=None, index_col=0)
         features_pagerank_author = pd.read_csv("features_pagerank_author", header=0, index_col=0)
+        features_adamic_adar_paper = pd.read_csv("features_adamic_adar_paper", header=None, index_col=0)
 
         test_features_node = pd.read_csv("test_features_node", header=0, index_col=0)
         test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
         test_features_pagerank_paper = pd.read_csv("test_features_pagerank_paper", header=0, index_col=0)
         test_features_meanAciteB = pd.read_csv("test_features_meanAciteB", header=None, index_col=0)
         test_features_pagerank_author = pd.read_csv("test_features_pagerank_author", header=0, index_col=0)
+        test_features_adamic_adar_paper = pd.read_csv("test_features_adamic_adar_paper", header=None, index_col=0)
+        print(time.clock() - t0)
 
     features_network[np.isnan(features_network)] = 0
     test_features_network[np.isnan(test_features_network)] = 0
 
-    training_features = pd.concat([features_node, features_network, features_pagerank_paper, features_meanAciteB, features_pagerank_author], axis=1)
+    training_features = pd.concat([features_node, features_network, features_pagerank_paper, features_meanAciteB, features_pagerank_author, features_adamic_adar_paper], axis=1)
     training_index = training_features.index
     # scale
     training_features = preprocessing.scale(training_features)
     labels_array = data.data_train["predict"][training_index]
 
-    if SUBMIT:
+    basemodel_1 = xgb.XGBClassifier(learning_rate=0.1, n_estimators=225, max_depth=6, min_child_weight=1, seed=0,
+                                    subsample=0.8, colsample_bytree=0.8, gamma=0, reg_alpha=0, reg_lambda=1,
+                                    objective="binary:logistic", silent=True, random_state=1, n_jobs=-1)
+
+    basemodel_2 = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=2)
+    basemodel_3 = RandomForestClassifier(n_estimators=100, max_features=5, random_state=3, n_jobs=-1)
+    basemodel_4 = ExtraTreesRegressor(n_jobs=-1)
+    basemodel_5 = LogisticRegression(solver="sag", n_jobs=-1)
+    # basemodel_5 = SVC(random_state=5)
+
+    if ENSEMBLE:
         X_train = training_features
         y_train = labels_array
 
-        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author], axis=1)
+        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB,test_features_pagerank_author, test_features_adamic_adar_paper], axis=1)
         testing_features = preprocessing.scale(testing_features)
         X_test = testing_features
-    else:
-        X_train, X_test, y_train, y_test = train_test_split(training_features, labels_array, test_size=0.2, random_state=0)
 
-    if TUNING:
-        if TUNING_PARMS == "n_estimators":
-            cv_params = {'n_estimators': [175, 200, 225, 250, 275]}    # 225 or 250
-            other_params = {'learning_rate': 0.1, 'n_estimators': 150, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
-                            'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1,
-                            'objective': "binary:logistic"}
-        if TUNING_PARMS == "max_depth & min_child_weight":
-            cv_params = {'max_depth': [2, 3, 4, 5, 6, 7, 8, 9], 'min_child_weight': [1, 2, 3, 4, 5, 6]}
-            other_params = {'learning_rate': 0.1, 'n_estimators': 225, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
-                            'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1,
-                            'objective': "binary:logistic"}
-
-        model = xgb.XGBClassifier(**other_params)
-        optimized_GBM = GridSearchCV(estimator=model, param_grid=cv_params, scoring='f1', cv=5, verbose=1, n_jobs=-1)
-        optimized_GBM.fit(X_train, y_train)
-        evalute_result = optimized_GBM.grid_scores_
-        print('evalute result:{0}'.format(evalute_result))
-        print('best params: {0}'.format(optimized_GBM.best_params_))
-        print('best score: {0}'.format(optimized_GBM.best_score_))
-    else:
-        # train model
-        model = xgb.XGBClassifier(max_depth=5, learning_rate=0.1, n_estimators=160, silent=True, objective="binary:logistic")
-        model.fit(X_train, y_train)
-
-        # show importance
-        plot_importance(model)
-        plt.show()
-
-        # test
-        ans = model.predict(X_test)
-
+        stacker = xgb.XGBClassifier(n_jobs=-1, subsample=0.8)
+        ensemble = Ensemble(n_folds=5, stacker=stacker, base_models=[basemodel_1, basemodel_2, basemodel_3, basemodel_4, basemodel_5])
+        ans, s_train, s_test = ensemble.fit_predict(X_train, y_train, X_test)
         if SUBMIT:
             predict = pd.read_csv(PREDICT, sep=",")
             predict["prediction"] = ans
             predict.to_csv("prediction", index=False)
+    else:
+        if SUBMIT:
+            X_train = training_features
+            y_train = labels_array
+
+            testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author, test_features_adamic_adar_paper], axis=1)
+            testing_features = preprocessing.scale(testing_features)
+            X_test = testing_features
         else:
-            ans_train = model.predict(X_train)
-            f1_train = f1_score(ans_train, y_train)
-            print("F1 Accuracy of Training: %.5f" % f1_train)
-            # calculate f1
-            f1 = f1_score(ans, y_test)
-            print("F1 Accuracy of Testing: %.5f" % f1)
+            X_train, X_test, y_train, y_test = train_test_split(training_features, labels_array, test_size=0.2, random_state=0)
+
+        if TUNING:
+            if TUNING_PARMS == "n_estimators":
+                cv_params = {'n_estimators': [175, 200, 225, 250, 275]}    # best: 225 or 250
+                other_params = {'learning_rate': 0.1, 'n_estimators': 150, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
+                                'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1,
+                                'objective': "binary:logistic"}
+            elif TUNING_PARMS == "max_depth & min_child_weight":
+                cv_params = {'max_depth': [2, 3, 4, 5, 6, 7, 8, 9], 'min_child_weight': [1, 2, 3, 4, 5, 6]}    # best: 6, 1
+                other_params = {'learning_rate': 0.1, 'n_estimators': 225, 'max_depth': 5, 'min_child_weight': 1, 'seed': 0,
+                                'subsample': 0.8, 'colsample_bytree': 0.8, 'gamma': 0, 'reg_alpha': 0, 'reg_lambda': 1,
+                                'objective': "binary:logistic"}
+
+            model = xgb.XGBClassifier(**other_params)
+            optimized_GBM = GridSearchCV(estimator=model, param_grid=cv_params, scoring='f1', cv=5, verbose=1, n_jobs=-1)
+            optimized_GBM.fit(X_train, y_train)
+            evalute_result = optimized_GBM.grid_scores_
+            print('evalute result:{0}'.format(evalute_result))
+            print('best params: {0}'.format(optimized_GBM.best_params_))
+            print('best score: {0}'.format(optimized_GBM.best_score_))
+        else:
+            # train model
+            model = basemodel_5
+
+            model.fit(X_train, y_train)
+
+            # show importance
+            # plot_importance(model)
+            # plt.show()
+
+            # test
+            ans = model.predict(X_test)
+
+            if SUBMIT:
+                predict = pd.read_csv(PREDICT, sep=",")
+                predict["prediction"] = ans
+                predict.to_csv("prediction", index=False)
+            else:
+                ans_train = model.predict(X_train)
+                f1_train = f1_score(ans_train, y_train)
+                print("F1 Accuracy of Training: %.5f" % f1_train)
+                # calculate f1
+                f1 = f1_score(ans, y_test)
+                print("F1 Accuracy of Testing: %.5f" % f1)
