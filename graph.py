@@ -26,7 +26,7 @@ data.load_data()
 data.sample(prop=1, load=True)
 
 data.get_node_dict()
-data.prepare_data()
+data.prepare_data(delete=False)
 data.init_graph_paper()
 data.init_graph_author()
 

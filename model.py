@@ -29,7 +29,7 @@ DIR_TEST = "social_test.txt"
 DIR_NODEINFO = "node_information.csv"
 PREDICT = "randomprediction.csv"
 
-RUN_FOR_FIRST_TIME = True
+RUN_FOR_FIRST_TIME = False
 SUBMIT = False
 LOAD_SAMPLE = True
 TUNING = False
@@ -174,6 +174,17 @@ class Data():
         elif get_item == "dyear":
             features_dyear = batch_data[["id_source", "id_target"]].apply(self.get_year, axis=1)
             return features_dyear
+        elif get_item == "author_overlap":
+            features_author_overlap = batch_data[["id_source", "id_target"]].apply(self.get_author_overlap, axis=1)
+            return features_author_overlap
+
+    def get_author_overlap(self, ids):
+        from_author = self.node_dict[ids[0]]["tkzd_author"]
+        to_author = self.node_dict[ids[1]]["tkzd_author"]
+        if (type(from_author) == list) and (type(to_author) == list):
+            return len(set(from_author).intersection(set(to_author)))
+        else:
+            return 0
 
     def get_year(self, ids, return_type="graph_id"):
         # need self.id_graphid
@@ -198,7 +209,7 @@ class Data():
                         set(graph.neighbors(i)).intersection(set(graph.neighbors(j)))])
 
     def apply_pagerank(self, input_list, pageranktype):
-        # input)list: e.g. [(123,456), (234,252)]
+        # input_list: e.g. [(123,456), (234,252)]
         if type(input_list) == list:
             if pageranktype == "mean_from":
                 author_pagerank_from = list(map(self.lookup_author_pagerank_from, input_list))
@@ -586,63 +597,72 @@ if __name__ == '__main__':
         # features_node = data.get_batch(0, data.data_train.shape[0], "train", get_item="node")    # 14 columns
         # features_network = data.get_batch(0, data.data_train.shape[0], "train", get_item="network_jaccard")    # 1 columns
         # features_pagerank_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_paper")    # 2 columns
-        features_meanAciteB = data.get_batch(0, data.data_train.shape[0], "train", get_item="mean_aciteb")    # 9 columns
+        # features_pagerank_paper = pd.concat([features_pagerank_paper, np.max(features_pagerank_paper, axis=1)], axis=1)
+        # features_meanAciteB = data.get_batch(0, data.data_train.shape[0], "train", get_item="mean_aciteb")    # 12 columns
         # features_pagerank_author = data.get_batch(0, data.data_train.shape[0], "train", get_item="pagerank_author")    # 2 columns
-        # features_pagerank_author_max = np.max(features_pagerank_author, axis=1)
+        # features_pagerank_author = pd.concat([features_pagerank_author, np.max(features_pagerank_author, axis=1)], axis=1)
         # features_adamic_adar_paper = data.get_batch(0, data.data_train.shape[0], "train", get_item="adamic_adar_paper")    # 1 columns
         # features_dyear = data.get_batch(0, data.data_train.shape[0], "train", get_item="dyear")
+        features_author_overlap = data.get_batch(0, data.data_train.shape[0], "train", get_item="author_overlap")
         print(time.clock() - t0)
 
         # features_node.to_csv("features_node")
         # features_network.to_csv("features_network")
         # features_pagerank_paper.to_csv("features_pagerank_paper")
-        features_meanAciteB.to_csv("features_meanAciteB")
+        # features_meanAciteB.to_csv("features_meanAciteB")
         # features_pagerank_author.to_csv("features_pagerank_author")
-        # features_pagerank_author_max.to_csv("features_pagerank_author_max")
         # features_adamic_adar_paper.to_csv("features_adamic_adar_paper")
         # features_dyear.to_csv("features_dyear")
+        features_author_overlap.to_csv("features_author_overlap")
 
         t0 = time.clock()
         # test_features_node = data.get_batch(0, data.data_test.shape[0], "test", get_item="node")
         # test_features_network = data.get_batch(0, data.data_test.shape[0], "test", get_item="network_jaccard")
         # test_features_pagerank_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_paper")
-        test_features_meanAciteB = data.get_batch(0, data.data_test.shape[0], "test", get_item="mean_aciteb")
+        # test_features_pagerank_paper = pd.concat([test_features_pagerank_paper, np.max(test_features_pagerank_paper, axis=1)], axis=1)
+        # test_features_meanAciteB = data.get_batch(0, data.data_test.shape[0], "test", get_item="mean_aciteb")
         # test_features_pagerank_author = data.get_batch(0, data.data_test.shape[0], "test", get_item="pagerank_author")
-        # test_features_pagerank_author_max = np.max(test_features_pagerank_author, axis=1)
+        # test_features_pagerank_author = pd.concat([test_features_pagerank_author, np.max(test_features_pagerank_author, axis=1)], axis=1)
         # test_features_adamic_adar_paper = data.get_batch(0, data.data_test.shape[0], "test", get_item="adamic_adar_paper")
         # test_features_dyear = data.get_batch(0, data.data_test.shape[0], "test", get_item="dyear")
+        test_features_author_overlap = data.get_batch(0, data.data_test.shape[0], "test", get_item="author_overlap")
         print(time.clock() - t0)
 
         # test_features_node.to_csv("test_features_node")
         # test_features_network.to_csv("test_features_network")
         # test_features_pagerank_paper.to_csv("test_features_pagerank_paper")
-        test_features_meanAciteB.to_csv("test_features_meanAciteB")
+        # test_features_meanAciteB.to_csv("test_features_meanAciteB")
         # test_features_pagerank_author.to_csv("test_features_pagerank_author")
-        # test_features_pagerank_author_max.to_csv("test_features_pagerank_author_max")
+        # test_features_pagerank_author.to_csv("test_features_pagerank_author")
         # test_features_adamic_adar_paper.to_csv("test_features_adamic_adar_paper")
         # test_features_dyear.to_csv("test_features_dyear")
+        test_features_author_overlap.to_csv("test_features_author_overlap")
 
     else:
         t0 = time.clock()
         features_node = pd.read_csv("features_node", header=0, index_col=0)
         features_network = pd.read_csv("features_network", header=None, index_col=0)
         features_pagerank_paper = pd.read_csv("features_pagerank_paper", header=0, index_col=0)
-        features_meanAciteB = pd.read_csv("features_meanAciteB", header=None, index_col=0)
+        features_meanAciteB = pd.read_csv("features_meanAciteB", header=0, index_col=0)
         features_pagerank_author = pd.read_csv("features_pagerank_author", header=0, index_col=0)
         features_adamic_adar_paper = pd.read_csv("features_adamic_adar_paper", header=None, index_col=0)
+        features_dyear = pd.read_csv("features_dyear", header=None, index_col=0)
+        features_author_overlap = pd.read_csv("features_author_overlap", header=None, index_col=0)
 
         test_features_node = pd.read_csv("test_features_node", header=0, index_col=0)
         test_features_network = pd.read_csv("test_features_network", header=None, index_col=0)
         test_features_pagerank_paper = pd.read_csv("test_features_pagerank_paper", header=0, index_col=0)
-        test_features_meanAciteB = pd.read_csv("test_features_meanAciteB", header=None, index_col=0)
+        test_features_meanAciteB = pd.read_csv("test_features_meanAciteB", header=0, index_col=0)
         test_features_pagerank_author = pd.read_csv("test_features_pagerank_author", header=0, index_col=0)
         test_features_adamic_adar_paper = pd.read_csv("test_features_adamic_adar_paper", header=None, index_col=0)
+        test_features_dyear = pd.read_csv("test_features_dyear", header=None, index_col=0)
+        test_features_author_overlap = pd.read_csv("test_features_author_overlap", header=None, index_col=0)
         print(time.clock() - t0)
 
     features_network[np.isnan(features_network)] = 0
     test_features_network[np.isnan(test_features_network)] = 0
 
-    training_features = pd.concat([features_node, features_network, features_pagerank_paper, features_meanAciteB, features_pagerank_author, features_adamic_adar_paper], axis=1)
+    training_features = pd.concat([features_node, features_network, features_pagerank_paper, features_meanAciteB, features_pagerank_author, features_adamic_adar_paper, features_dyear, features_author_overlap], axis=1)
     training_index = training_features.index
     # scale
     training_features = preprocessing.scale(training_features)
@@ -662,7 +682,7 @@ if __name__ == '__main__':
         X_train = training_features
         y_train = labels_array
 
-        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author, test_features_adamic_adar_paper], axis=1)
+        testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author, test_features_adamic_adar_paper, test_features_dyear, test_features_author_overlap], axis=1)
         testing_features = preprocessing.scale(testing_features)
         X_test = testing_features
 
@@ -680,7 +700,7 @@ if __name__ == '__main__':
             X_train = training_features
             y_train = labels_array
 
-            testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author, test_features_adamic_adar_paper], axis=1)
+            testing_features = pd.concat([test_features_node, test_features_network, test_features_pagerank_paper, test_features_meanAciteB, test_features_pagerank_author, test_features_adamic_adar_paper, test_features_dyear, test_features_author_overlap], axis=1)
             testing_features = preprocessing.scale(testing_features)
             X_test = testing_features
         else:
