@@ -34,12 +34,12 @@ PREDICT = "randomprediction.csv"
 
 
 # ------- Control -------
-RUN_FOR_FIRST_TIME = False
+RUN_FOR_FIRST_TIME = True
 SUBMIT = False
-LOAD_SAMPLE = True
+LOAD_SAMPLE = False
 TUNING = False
 TUNING_PARMS = "max_depth & min_child_weight"
-ENSEMBLE = True
+ENSEMBLE = False
 # -----------------------
 
 
