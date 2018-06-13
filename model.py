@@ -32,15 +32,14 @@ DIR_TEST = "social_test.txt"
 DIR_NODEINFO = "node_information.csv"
 PREDICT = "randomprediction.csv"
 
+
 # ------- Control -------
 RUN_FOR_FIRST_TIME = False
-SUBMIT = True
+SUBMIT = False
 LOAD_SAMPLE = True
 TUNING = False
 TUNING_PARMS = "max_depth & min_child_weight"
-ENSEMBLE = False
-
-
+ENSEMBLE = True
 # -----------------------
 
 
